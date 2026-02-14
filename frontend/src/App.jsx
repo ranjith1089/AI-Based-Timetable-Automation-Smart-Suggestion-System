@@ -1,3 +1,6 @@
+const appTitle = import.meta.env.VITE_APP_TITLE || 'AI-Based Timetable Automation'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
 const cards = [
   {
     title: 'Frontend',
@@ -24,8 +27,11 @@ const cards = [
 export default function App() {
   return (
     <main style={{ fontFamily: 'Arial, sans-serif', padding: '2rem', maxWidth: 900, margin: '0 auto' }}>
-      <h1>AI-Based Timetable Automation</h1>
+      <h1>{appTitle}</h1>
       <p>Multi-tenant baseline implementation scaffold.</p>
+      <p>
+        API Base URL: <code>{apiBaseUrl}</code>
+      </p>
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: '1rem' }}>
         {cards.map((card) => (
           <article key={card.title} style={{ border: '1px solid #ddd', borderRadius: 10, padding: '1rem' }}>

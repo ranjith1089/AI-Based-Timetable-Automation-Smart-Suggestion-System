@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,11 +10,15 @@ from .schemas import (
     User,
 )
 
-app = FastAPI(title="AI Timetable Automation API", version="0.1.0")
+api_title = os.getenv("API_TITLE", "AI Timetable Automation API")
+api_version = os.getenv("API_VERSION", "0.1.0")
+allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
+
+app = FastAPI(title=api_title, version=api_version)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -40,13 +46,11 @@ def list_users() -> list[User]:
 
 @app.post("/access/scope", response_model=AccessScope)
 def assign_scope(scope: AccessScope) -> AccessScope:
-    # In production, this would persist to DB and enforce uniqueness/policy checks.
     return scope
 
 
 @app.post("/timetables/generate", response_model=TimetableGenerateResponse)
 def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
-    # Lightweight placeholder planner for phase-0/1 demonstrations.
     slots = []
     for i, section in enumerate(payload.sections, start=1):
         slots.append(
