@@ -1,8 +1,8 @@
 # AI-Based Timetable Automation & Smart Suggestion System
 
-This repository includes a baseline implementation across:
+This repository includes a multi-tenant baseline across:
 - **Frontend**: React + Vite
-- **Backend**: FastAPI
+- **Backend**: FastAPI (constraint, conflict, suggestion, simulation, emergency, quality APIs)
 - **Database**: PostgreSQL schema
 - **Testing**: Pytest API tests
 
@@ -24,6 +24,16 @@ Key variables:
 - `backend/` - Tenant-aware API scaffold
 - `database/schema.sql` - Multi-tenant relational schema
 - `IMPLEMENTATION_PLAN.md` - Product and delivery plan
+- `GAP_ANALYSIS_AND_TASK_PLAN.md` - gap and dependency task roadmap
+
+## Backend Core Endpoints (Implemented)
+- `POST /constraints`, `GET /constraints`
+- `POST /timetables/validate`
+- `POST /timetables/generate`
+- `POST /timetables/suggestions`
+- `POST /simulations`
+- `POST /reschedule/emergency`
+- `POST /timetables/quality`
 
 ## Backend Run
 ```bash
