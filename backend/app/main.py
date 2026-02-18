@@ -1,9 +1,17 @@
 import os
+from contextlib import asynccontextmanager
 from uuid import uuid4
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from .database import check_connection, _get_engine
 from .schemas import (
     AccessScope,
     ConstraintRule,
@@ -31,7 +39,24 @@ api_title = os.getenv("API_TITLE", "AI Timetable Automation API")
 api_version = os.getenv("API_VERSION", "0.1.0")
 allowed_origins = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
 
-app = FastAPI(title=api_title, version=api_version)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    status = check_connection()
+    if status["method"] == "postgres":
+        print("Connected to Supabase PostgreSQL directly")
+    elif status["method"] == "rest_api":
+        print("Connected to Supabase via REST API (HTTPS)")
+    else:
+        print("WARNING: No database connection — running with in-memory storage only")
+    yield
+    try:
+        _get_engine().dispose()
+    except Exception:
+        pass
+
+
+app = FastAPI(title=api_title, version=api_version, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +74,14 @@ TIMETABLE_CACHE: dict[str, TimetableGenerateResponse] = {}
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/db-health")
+def db_health() -> dict:
+    status = check_connection()
+    if status["method"]:
+        return {"status": "ok", "database": "connected", "method": status["method"]}
+    raise HTTPException(status_code=503, detail="Database connection failed")
 
 
 @app.post("/users", response_model=User)
