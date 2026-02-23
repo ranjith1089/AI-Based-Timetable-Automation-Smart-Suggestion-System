@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class User(BaseModel):
@@ -53,6 +53,47 @@ class TimetableGenerateRequest(BaseModel):
     courses: list[str]
     rooms: list[str]
     faculty_ids: list[str]
+    working_days: int = Field(default=5, ge=1, le=6)
+    hours_per_day: int = Field(default=6, ge=1, le=10)
+    extra_hours: int = Field(default=0, ge=0, le=12)
+    saturday_enabled: bool = False
+    saturday_hours: int = Field(default=0, ge=0, le=10)
+    lab_continuous_hours: int = Field(default=2, ge=1, le=4)
+
+    @model_validator(mode="after")
+    def validate_generation_config(self) -> "TimetableGenerateRequest":
+        if self.saturday_enabled:
+            if self.working_days > 5:
+                raise ValueError("working_days cannot exceed 5 when saturday_enabled is true")
+            if self.saturday_hours <= 0:
+                raise ValueError("saturday_hours must be greater than 0 when saturday_enabled is true")
+        else:
+            if self.saturday_hours != 0:
+                raise ValueError("saturday_hours must be 0 when saturday_enabled is false")
+            if self.working_days > 5:
+                raise ValueError("working_days cannot exceed 5 when saturday_enabled is false")
+
+        max_continuous_hours = max(self.hours_per_day, self.saturday_hours)
+        if self.lab_continuous_hours > max_continuous_hours:
+            raise ValueError("lab_continuous_hours cannot exceed configured daily maximum hours")
+
+        return self
+
+
+class TimetableGenerationConfig(BaseModel):
+    working_days: int
+    hours_per_day: int
+    extra_hours: int
+    saturday_enabled: bool
+    saturday_hours: int
+    lab_continuous_hours: int
+
+
+class TimetableVersionRecord(BaseModel):
+    timetable_id: str
+    version: int
+    tenant_id: str
+    generation_config: TimetableGenerationConfig
 
 
 class ConflictRecord(BaseModel):
@@ -64,10 +105,13 @@ class ConflictRecord(BaseModel):
 
 
 class TimetableGenerateResponse(BaseModel):
+    timetable_id: str
+    version: int
     tenant_id: str
     generated: bool
     conflict_count: int
     quality_score: float
+    generation_config: TimetableGenerationConfig
     timetable: list[TimetableEntry]
 
 

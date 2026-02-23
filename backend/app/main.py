@@ -23,7 +23,9 @@ from .schemas import (
     SuggestionResponse,
     TimetableGenerateRequest,
     TimetableGenerateResponse,
+    TimetableGenerationConfig,
     TimetableValidateRequest,
+    TimetableVersionRecord,
     User,
 )
 from .services import (
@@ -69,6 +71,7 @@ MOCK_USERS: list[User] = []
 MOCK_SCOPES: list[AccessScope] = []
 MOCK_CONSTRAINTS: list[ConstraintRule] = []
 TIMETABLE_CACHE: dict[str, TimetableGenerateResponse] = {}
+TIMETABLE_VERSIONS: dict[str, list[TimetableVersionRecord]] = {}
 
 
 @app.get("/health")
@@ -128,32 +131,75 @@ def validate_timetable(payload: TimetableValidateRequest) -> dict:
     }
 
 
+def _build_generation_config(payload: TimetableGenerateRequest) -> TimetableGenerationConfig:
+    return TimetableGenerationConfig(
+        working_days=payload.working_days,
+        hours_per_day=payload.hours_per_day,
+        extra_hours=payload.extra_hours,
+        saturday_enabled=payload.saturday_enabled,
+        saturday_hours=payload.saturday_hours,
+        lab_continuous_hours=payload.lab_continuous_hours,
+    )
+
+
 @app.post("/timetables/generate", response_model=TimetableGenerateResponse)
 def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
     if not payload.courses or not payload.rooms or not payload.faculty_ids:
         raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
 
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    active_weekdays = day_names[: payload.working_days]
+    day_period_map: list[tuple[str, int]] = []
+
+    for day in active_weekdays:
+        for period in range(1, payload.hours_per_day + 1):
+            day_period_map.append((day, period))
+
+    if payload.saturday_enabled:
+        for period in range(1, payload.saturday_hours + 1):
+            day_period_map.append(("Saturday", period))
+
+    for period in range(1, payload.extra_hours + 1):
+        day_period_map.append(("Extra", period))
+
     entries = []
-    for i, section in enumerate(payload.sections, start=1):
-        entries.append(
-            {
-                "section": section,
-                "day": "Monday",
-                "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
-                "room": payload.rooms[(i - 1) % len(payload.rooms)],
-                "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
-            }
-        )
+    index = 0
+    for section in payload.sections:
+        for day, period in day_period_map:
+            entries.append(
+                {
+                    "section": section,
+                    "day": day,
+                    "period": period,
+                    "course": payload.courses[index % len(payload.courses)],
+                    "room": payload.rooms[index % len(payload.rooms)],
+                    "faculty_id": payload.faculty_ids[index % len(payload.faculty_ids)],
+                }
+            )
+            index += 1
+
+    timetable_id = str(uuid4())
+    versions = TIMETABLE_VERSIONS.setdefault(timetable_id, [])
+    version = len(versions) + 1
+    generation_config = _build_generation_config(payload)
+    version_record = TimetableVersionRecord(
+        timetable_id=timetable_id,
+        version=version,
+        tenant_id=payload.tenant_id,
+        generation_config=generation_config,
+    )
+    versions.append(version_record)
 
     response = TimetableGenerateResponse(
+        timetable_id=timetable_id,
+        version=version,
         tenant_id=payload.tenant_id,
         generated=True,
         conflict_count=0,
         quality_score=82.0,
+        generation_config=generation_config,
         timetable=entries,
     )
-    timetable_id = str(uuid4())
     TIMETABLE_CACHE[timetable_id] = response
     return response
 

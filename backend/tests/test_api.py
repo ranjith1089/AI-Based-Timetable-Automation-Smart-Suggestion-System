@@ -73,6 +73,10 @@ def test_generate_simulation_emergency_quality() -> None:
     }
     generate_response = client.post('/timetables/generate', json=generate_payload)
     assert generate_response.status_code == 200
+    body = generate_response.json()
+    assert body['version'] == 1
+    assert body['generation_config']['working_days'] == 5
+    assert any(slot['day'] == 'Friday' for slot in body['timetable'])
 
     simulation_payload = {
         'tenant_id': 't1',
@@ -101,3 +105,40 @@ def test_generate_simulation_emergency_quality() -> None:
     quality_response = client.post('/timetables/quality', json=quality_payload)
     assert quality_response.status_code == 200
     assert quality_response.json()['overall_quality'] >= 0
+
+
+
+def test_generate_with_custom_configuration_and_validation() -> None:
+    generate_payload = {
+        'tenant_id': 't2',
+        'sections': ['ECE-A'],
+        'courses': ['DSP', 'Signals'],
+        'rooms': ['L1'],
+        'faculty_ids': ['F10'],
+        'working_days': 4,
+        'hours_per_day': 5,
+        'extra_hours': 2,
+        'saturday_enabled': True,
+        'saturday_hours': 3,
+        'lab_continuous_hours': 3,
+    }
+    generate_response = client.post('/timetables/generate', json=generate_payload)
+    assert generate_response.status_code == 200
+    data = generate_response.json()
+    assert data['generation_config']['saturday_enabled'] is True
+    assert data['generation_config']['saturday_hours'] == 3
+
+    day_slot_count = len(data['timetable'])
+    assert day_slot_count == (4 * 5) + 3 + 2
+
+    invalid_payload = {
+        'tenant_id': 't2',
+        'sections': ['ECE-A'],
+        'courses': ['DSP'],
+        'rooms': ['L1'],
+        'faculty_ids': ['F10'],
+        'saturday_enabled': False,
+        'saturday_hours': 2,
+    }
+    invalid_response = client.post('/timetables/generate', json=invalid_payload)
+    assert invalid_response.status_code == 422
