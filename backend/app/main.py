@@ -15,6 +15,7 @@ from .database import check_connection, _get_engine
 from .schemas import (
     AccessScope,
     ConstraintRule,
+    ElectiveGroup,
     EmergencyRescheduleRequest,
     EmergencyRescheduleResponse,
     QualityResponse,
@@ -32,6 +33,7 @@ from .services import (
     detect_conflicts,
     emergency_reschedule,
     run_simulation,
+    generate_section_aware_timetable,
     validate_constraints,
 )
 
@@ -68,6 +70,7 @@ app.add_middleware(
 MOCK_USERS: list[User] = []
 MOCK_SCOPES: list[AccessScope] = []
 MOCK_CONSTRAINTS: list[ConstraintRule] = []
+MOCK_ELECTIVE_GROUPS: list[ElectiveGroup] = []
 TIMETABLE_CACHE: dict[str, TimetableGenerateResponse] = {}
 
 
@@ -117,9 +120,23 @@ def list_constraints(tenant_id: str) -> list[ConstraintRule]:
     return [rule for rule in MOCK_CONSTRAINTS if rule.tenant_id == tenant_id]
 
 
+
+@app.post("/elective-groups", response_model=ElectiveGroup)
+def create_elective_group(group: ElectiveGroup) -> ElectiveGroup:
+    MOCK_ELECTIVE_GROUPS.append(group)
+    return group
+
+
+@app.get("/elective-groups", response_model=list[ElectiveGroup])
+def list_elective_groups(section: str | None = None) -> list[ElectiveGroup]:
+    if not section:
+        return MOCK_ELECTIVE_GROUPS
+    return [group for group in MOCK_ELECTIVE_GROUPS if section in group.sections]
+
+
 @app.post("/timetables/validate")
 def validate_timetable(payload: TimetableValidateRequest) -> dict:
-    conflicts = detect_conflicts(payload.timetable)
+    conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return {
         "tenant_id": payload.tenant_id,
         "valid": len(conflicts) == 0,
@@ -133,24 +150,27 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
     if not payload.courses or not payload.rooms or not payload.faculty_ids:
         raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
 
-    entries = []
-    for i, section in enumerate(payload.sections, start=1):
-        entries.append(
-            {
-                "section": section,
-                "day": "Monday",
-                "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
-                "room": payload.rooms[(i - 1) % len(payload.rooms)],
-                "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
-            }
+    try:
+        entries = generate_section_aware_timetable(
+            tenant_id=payload.tenant_id,
+            sections=payload.sections,
+            courses=payload.courses,
+            rooms=payload.rooms,
+            faculty_ids=payload.faculty_ids,
+            section_subject_plan=payload.section_subject_plan,
+            elective_groups=payload.elective_groups,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    conflicts = detect_conflicts(entries, payload.elective_groups)
+    quality = calculate_quality(payload.tenant_id, entries, len(conflicts))
 
     response = TimetableGenerateResponse(
         tenant_id=payload.tenant_id,
         generated=True,
-        conflict_count=0,
-        quality_score=82.0,
+        conflict_count=len(conflicts),
+        quality_score=quality.overall_quality,
         timetable=entries,
     )
     timetable_id = str(uuid4())
@@ -160,7 +180,7 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
 
 @app.post("/timetables/suggestions", response_model=SuggestionResponse)
 def timetable_suggestions(payload: TimetableValidateRequest) -> SuggestionResponse:
-    conflicts = detect_conflicts(payload.timetable)
+    conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return build_suggestions(payload.tenant_id, payload.timetable, len(conflicts))
 
 
@@ -177,5 +197,5 @@ def handle_emergency(payload: EmergencyRescheduleRequest) -> EmergencyReschedule
 
 @app.post("/timetables/quality", response_model=QualityResponse)
 def timetable_quality(payload: TimetableValidateRequest) -> QualityResponse:
-    conflicts = detect_conflicts(payload.timetable)
+    conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return calculate_quality(payload.tenant_id, payload.timetable, len(conflicts))
