@@ -47,12 +47,33 @@ class TimetableEntry(BaseModel):
     faculty_id: str
 
 
+class SubjectBlock(BaseModel):
+    subject: str
+    required_periods: int = Field(ge=1, le=10, default=1)
+    is_lab: bool = False
+
+
+class SectionSubjectPlan(BaseModel):
+    section: str
+    subject_blocks: list[SubjectBlock]
+
+
+class ElectiveGroup(BaseModel):
+    group_id: str
+    subject: str
+    sections: list[str] = Field(min_length=1)
+    faculty_ids: list[str] = Field(min_length=1)
+    room_ids: list[str] = Field(min_length=1)
+
+
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
     courses: list[str]
     rooms: list[str]
     faculty_ids: list[str]
+    section_subject_plan: list[SectionSubjectPlan] = Field(default_factory=list)
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
 
 
 class ConflictRecord(BaseModel):
@@ -74,6 +95,7 @@ class TimetableGenerateResponse(BaseModel):
 class TimetableValidateRequest(BaseModel):
     tenant_id: str
     timetable: list[TimetableEntry]
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
 
 
 class SuggestionRecord(BaseModel):
