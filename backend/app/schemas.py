@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class User(BaseModel):
@@ -42,17 +44,56 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course: str
+    course_code: str
+    course_name: str
+    semester: int = Field(ge=1)
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
+    is_elective: bool | None = None
+    requires_lab: bool | None = None
     room: str
     faculty_id: str
+
+
+class ElectiveGroup(BaseModel):
+    group_name: str
+    sections: list[str]
+    electives: list[str]
+
+
+class SaturdayConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["LABS_ONLY", "SD_ELECTIVE_FOCUS", "OVERFLOW"] = "OVERFLOW"
+    max_periods: int = Field(default=4, ge=1, le=8)
+
+
+class ExtraHourBuffer(BaseModel):
+    enabled: bool = False
+    periods: int = Field(default=0, ge=0, le=3)
 
 
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
+    section_count: int | None = Field(default=None, ge=1)
+    section_groups: dict[str, list[str]] = Field(default_factory=dict)
     courses: list[str]
     rooms: list[str]
     faculty_ids: list[str]
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
+    saturday_config: SaturdayConfig = Field(default_factory=SaturdayConfig)
+    extra_hour_buffer: ExtraHourBuffer = Field(default_factory=ExtraHourBuffer)
+    enforce_lab_continuity: bool = True
+
+    @model_validator(mode="after")
+    def validate_section_count(self) -> "TimetableGenerateRequest":
+        expected_count = self.section_count or len(self.sections)
+        if expected_count != len(self.sections):
+            raise ValueError("section_count must match number of sections supplied")
+        return self
 
 
 class ConflictRecord(BaseModel):
@@ -69,11 +110,14 @@ class TimetableGenerateResponse(BaseModel):
     conflict_count: int
     quality_score: float
     timetable: list[TimetableEntry]
+    section_timetables: dict[str, list[TimetableEntry]]
+    allocation_rationale: list[str] = Field(default_factory=list)
 
 
 class TimetableValidateRequest(BaseModel):
     tenant_id: str
     timetable: list[TimetableEntry]
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
 
 
 class SuggestionRecord(BaseModel):
