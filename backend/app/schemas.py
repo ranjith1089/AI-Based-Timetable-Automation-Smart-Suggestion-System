@@ -42,15 +42,37 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course: str
+    course_code: str
+    course_name: str
+    semester: int = Field(ge=1)
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
+    is_elective: bool | None = None
+    requires_lab: bool | None = None
     room: str
     faculty_id: str
+
+
+class SubjectInput(BaseModel):
+    course_code: str = Field(min_length=2)
+    course_name: str = Field(min_length=2)
+    semester: int = Field(ge=1)
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
+    is_elective: bool | None = None
+    requires_lab: bool | None = None
 
 
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
-    courses: list[str]
+    subjects: list[SubjectInput]
     rooms: list[str]
     faculty_ids: list[str]
 

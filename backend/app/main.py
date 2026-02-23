@@ -30,6 +30,7 @@ from .services import (
     build_suggestions,
     calculate_quality,
     detect_conflicts,
+    generate_timetable_entries,
     emergency_reschedule,
     run_simulation,
     validate_constraints,
@@ -130,21 +131,10 @@ def validate_timetable(payload: TimetableValidateRequest) -> dict:
 
 @app.post("/timetables/generate", response_model=TimetableGenerateResponse)
 def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
-    if not payload.courses or not payload.rooms or not payload.faculty_ids:
-        raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
+    if not payload.subjects or not payload.rooms or not payload.faculty_ids:
+        raise HTTPException(status_code=400, detail="subjects, rooms, and faculty_ids are required")
 
-    entries = []
-    for i, section in enumerate(payload.sections, start=1):
-        entries.append(
-            {
-                "section": section,
-                "day": "Monday",
-                "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
-                "room": payload.rooms[(i - 1) % len(payload.rooms)],
-                "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
-            }
-        )
+    entries = generate_timetable_entries(payload)
 
     response = TimetableGenerateResponse(
         tenant_id=payload.tenant_id,

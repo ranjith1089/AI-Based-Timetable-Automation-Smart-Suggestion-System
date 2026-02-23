@@ -11,8 +11,43 @@ from .schemas import (
     SimulationResponse,
     SuggestionRecord,
     SuggestionResponse,
+    SubjectInput,
     TimetableEntry,
+    TimetableGenerateRequest,
 )
+
+
+def _slot_load(subject: SubjectInput) -> int:
+    return subject.l_hours + subject.t_hours + subject.p_hours
+
+
+def generate_timetable_entries(payload: TimetableGenerateRequest) -> list[TimetableEntry]:
+    entries: list[TimetableEntry] = []
+    ordered_subjects = sorted(payload.subjects, key=_slot_load, reverse=True)
+
+    for i, section in enumerate(payload.sections, start=1):
+        subject = ordered_subjects[(i - 1) % len(ordered_subjects)]
+        entries.append(
+            TimetableEntry(
+                section=section,
+                day="Monday",
+                period=i,
+                course_code=subject.course_code,
+                course_name=subject.course_name,
+                semester=subject.semester,
+                l_hours=subject.l_hours,
+                t_hours=subject.t_hours,
+                p_hours=subject.p_hours,
+                tcp=subject.tcp,
+                course_type=subject.course_type,
+                is_elective=subject.is_elective,
+                requires_lab=subject.requires_lab,
+                room=payload.rooms[(i - 1) % len(payload.rooms)],
+                faculty_id=payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
+            )
+        )
+
+    return entries
 
 
 def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
