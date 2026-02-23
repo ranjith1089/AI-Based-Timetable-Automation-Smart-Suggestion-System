@@ -31,6 +31,7 @@ from .services import (
     calculate_quality,
     detect_conflicts,
     emergency_reschedule,
+    generate_timetable_entries,
     run_simulation,
     validate_constraints,
 )
@@ -133,25 +134,19 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
     if not payload.courses or not payload.rooms or not payload.faculty_ids:
         raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
 
-    entries = []
-    for i, section in enumerate(payload.sections, start=1):
-        entries.append(
-            {
-                "section": section,
-                "day": "Monday",
-                "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
-                "room": payload.rooms[(i - 1) % len(payload.rooms)],
-                "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
-            }
-        )
+    entries, rationale = generate_timetable_entries(payload)
+    conflicts = detect_conflicts(entries)
+    quality = calculate_quality(payload.tenant_id, entries, len(conflicts))
 
+    section_timetables = {section: [entry for entry in entries if entry.section == section] for section in payload.sections}
     response = TimetableGenerateResponse(
         tenant_id=payload.tenant_id,
         generated=True,
-        conflict_count=0,
-        quality_score=82.0,
+        conflict_count=len(conflicts),
+        quality_score=quality.overall_quality,
         timetable=entries,
+        section_timetables=section_timetables,
+        allocation_rationale=rationale,
     )
     timetable_id = str(uuid4())
     TIMETABLE_CACHE[timetable_id] = response

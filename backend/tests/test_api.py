@@ -67,12 +67,35 @@ def test_generate_simulation_emergency_quality() -> None:
     generate_payload = {
         'tenant_id': 't1',
         'sections': ['CSE-A', 'CSE-B'],
-        'courses': ['Math', 'AI'],
-        'rooms': ['R101', 'R102'],
-        'faculty_ids': ['F1', 'F2'],
+        'section_count': 2,
+        'section_groups': {'CSE': ['CSE-A', 'CSE-B']},
+        'courses': ['Math', 'AI Lab', 'Software Design'],
+        'rooms': ['R101', 'R102', 'LAB-1', 'LAB-2'],
+        'faculty_ids': ['F1', 'F2', 'F3'],
+        'elective_groups': [
+            {
+                'group_name': 'Open Elective Basket',
+                'sections': ['CSE-A', 'CSE-B'],
+                'electives': ['OE-DataScience', 'OE-DataScience'],
+            }
+        ],
+        'saturday_config': {'enabled': True, 'mode': 'LABS_ONLY', 'max_periods': 2},
+        'extra_hour_buffer': {'enabled': True, 'periods': 1},
+        'enforce_lab_continuity': True,
     }
     generate_response = client.post('/timetables/generate', json=generate_payload)
     assert generate_response.status_code == 200
+    generated = generate_response.json()
+    assert set(generated['section_timetables']) == {'CSE-A', 'CSE-B'}
+    assert len(generated['allocation_rationale']) >= 3
+
+    elective_slots = [
+        (entry['section'], entry['day'], entry['period'])
+        for entry in generated['timetable']
+        if entry['course'] == 'OE-DataScience'
+    ]
+    assert len(elective_slots) == 2
+    assert len({(day, period) for _, day, period in elective_slots}) == 1
 
     simulation_payload = {
         'tenant_id': 't1',
@@ -96,7 +119,7 @@ def test_generate_simulation_emergency_quality() -> None:
 
     quality_payload = {
         'tenant_id': 't1',
-        'timetable': generate_response.json()['timetable'],
+        'timetable': generated['timetable'],
     }
     quality_response = client.post('/timetables/quality', json=quality_payload)
     assert quality_response.status_code == 200
