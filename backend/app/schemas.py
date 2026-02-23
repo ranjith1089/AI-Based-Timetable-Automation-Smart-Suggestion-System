@@ -170,31 +170,19 @@ class QualityResponse(BaseModel):
     overall_quality: float
 
 
-class CurriculumImportRequest(BaseModel):
-    tenant_id: str
-
-
 class ExtractedSubject(BaseModel):
-    semester: int = Field(ge=1, le=12)
-    course_code: str
-    course_name: str
+    semester: str
+    code: str
+    name: str
     course_type: str
-    l: int = Field(ge=0)
-    t: int = Field(ge=0)
-    p: int = Field(ge=0)
-    tcp: int = Field(ge=0)
-    credits: float = Field(ge=0)
+    L: int = Field(ge=0)
+    T: int = Field(ge=0)
+    P: int = Field(ge=0)
+    TCP: int = Field(ge=0)
+    credits: int = Field(ge=0)
 
 
-class SemesterExtractionSummary(BaseModel):
-    semester: int
-    subject_count: int
-    total_credits: float
-
-
-class CurriculumImportResponse(BaseModel):
-    tenant_id: str
-    extracted_count: int
-    persisted_count: int
-    semesters: list[SemesterExtractionSummary]
-    subjects: list[ExtractedSubject]
+class SubjectImportResponse(BaseModel):
+    semesters: dict[str, list[ExtractedSubject]]
+    errors: list[dict] = Field(default_factory=list)
+    total_subjects: int

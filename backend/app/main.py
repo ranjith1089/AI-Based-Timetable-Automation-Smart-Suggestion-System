@@ -8,11 +8,11 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import check_connection, _get_engine
-from .pdf_ingestion import extract_subjects_from_pdf, persist_subjects, validate_by_semester
+from .pdf_ingestion import extract_raw_tables, normalize_subject_rows
 from .schemas import (
     AccessScope,
     ConstraintRule,
@@ -23,6 +23,7 @@ from .schemas import (
     QualityResponse,
     SimulationRequest,
     SimulationResponse,
+    SubjectImportResponse,
     SuggestionResponse,
     SubjectSpec,
     TimetableGenerateRequest,
@@ -201,21 +202,26 @@ def timetable_quality(payload: TimetableValidateRequest) -> QualityResponse:
     return calculate_quality(payload.tenant_id, payload.timetable, len(conflicts))
 
 
-@app.post("/curriculum/import", response_model=CurriculumImportResponse)
-async def import_curriculum(request: Request, tenant_id: str) -> CurriculumImportResponse:
-    content_type = request.headers.get("content-type", "")
-    if "application/pdf" not in content_type and "application/x-pdf" not in content_type:
-        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+@app.post("/subjects/import-pdf", response_model=SubjectImportResponse)
+async def import_subjects_pdf(
+    pdf_content: bytes = Body(..., media_type="application/pdf"),
+) -> SubjectImportResponse:
+    if not pdf_content:
+        raise HTTPException(status_code=400, detail="Empty PDF payload")
 
-    pdf_bytes = await request.body()
-    subjects = extract_subjects_from_pdf(pdf_bytes)
-    summaries = validate_by_semester(subjects)
-    persisted_count = persist_subjects(tenant_id, subjects)
+    import tempfile
 
-    return CurriculumImportResponse(
-        tenant_id=tenant_id,
-        extracted_count=len(subjects),
-        persisted_count=persisted_count,
-        semesters=summaries,
-        subjects=subjects,
-    )
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(pdf_content)
+        tmp_path = tmp.name
+
+    try:
+        rows = extract_raw_tables(tmp_path)
+        semesters, errors = normalize_subject_rows(rows)
+        total_subjects = sum(len(subjects) for subjects in semesters.values())
+        return SubjectImportResponse(semesters=semesters, errors=errors, total_subjects=total_subjects)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
