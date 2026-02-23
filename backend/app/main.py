@@ -22,10 +22,15 @@ from .schemas import (
     SimulationResponse,
     SuggestionResponse,
     TimetableGenerateRequest,
+    SchedulerAdminConfig,
+    SchedulerGenerateResult,
+    SchedulerSectionInput,
+    SchedulerSubjectInput,
     TimetableGenerateResponse,
     TimetableValidateRequest,
     User,
 )
+from .scheduler.engine import run_scheduler
 from .services import (
     build_suggestions,
     calculate_quality,
@@ -128,33 +133,50 @@ def validate_timetable(payload: TimetableValidateRequest) -> dict:
     }
 
 
-@app.post("/timetables/generate", response_model=TimetableGenerateResponse)
-def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
-    if not payload.courses or not payload.rooms or not payload.faculty_ids:
-        raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
+@app.post("/timetables/generate", response_model=SchedulerGenerateResult)
+def generate_timetable(payload: TimetableGenerateRequest) -> SchedulerGenerateResult:
+    if not payload.sections or not payload.rooms:
+        raise HTTPException(status_code=400, detail="sections and rooms are required")
 
-    entries = []
-    for i, section in enumerate(payload.sections, start=1):
-        entries.append(
-            {
-                "section": section,
-                "day": "Monday",
-                "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
-                "room": payload.rooms[(i - 1) % len(payload.rooms)],
-                "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
-            }
-        )
+    admin_config = payload.admin_config or SchedulerAdminConfig(
+        working_days=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+        hours_per_day=6,
+        extra_hours={},
+        saturday_hours=4,
+    )
 
-    response = TimetableGenerateResponse(
+    if isinstance(payload.sections[0], str):
+        if not payload.courses or not payload.faculty_ids:
+            raise HTTPException(status_code=400, detail="courses and faculty_ids are required for legacy section payload")
+        converted_sections: list[SchedulerSectionInput] = []
+        for section in payload.sections:
+            subjects = [
+                SchedulerSubjectInput(code=course, ltp="1-0-0", faculty_id=payload.faculty_ids[i % len(payload.faculty_ids)])
+                for i, course in enumerate(payload.courses)
+            ]
+            converted_sections.append(SchedulerSectionInput(section=section, subjects=subjects))
+    else:
+        converted_sections = payload.sections
+
+    ga = payload.ga_config or {}
+    response = run_scheduler(
         tenant_id=payload.tenant_id,
-        generated=True,
-        conflict_count=0,
-        quality_score=82.0,
-        timetable=entries,
+        sections=converted_sections,
+        rooms=payload.rooms,
+        room_types=payload.room_types,
+        admin=admin_config,
+        population_size=int(ga.get("population_size", 20)),
+        generations=int(ga.get("generations", 20)),
+        mutation_rate=float(ga.get("mutation_rate", 0.2)),
     )
     timetable_id = str(uuid4())
-    TIMETABLE_CACHE[timetable_id] = response
+    TIMETABLE_CACHE[timetable_id] = TimetableGenerateResponse(
+        tenant_id=response.tenant_id,
+        generated=response.generated,
+        conflict_count=response.conflict_count,
+        quality_score=response.quality_score,
+        timetable=response.timetable,
+    )
     return response
 
 

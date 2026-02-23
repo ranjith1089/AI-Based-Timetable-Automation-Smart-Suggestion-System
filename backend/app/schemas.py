@@ -1,4 +1,6 @@
-from typing import Literal
+from __future__ import annotations
+
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -49,10 +51,13 @@ class TimetableEntry(BaseModel):
 
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
-    sections: list[str]
-    courses: list[str]
+    sections: list[Union[str, "SchedulerSectionInput"]]
+    courses: list[str] = Field(default_factory=list)
     rooms: list[str]
-    faculty_ids: list[str]
+    faculty_ids: list[str] = Field(default_factory=list)
+    admin_config: Optional["SchedulerAdminConfig"] = None
+    room_types: dict[str, Literal["CLASSROOM", "LAB"]] = Field(default_factory=dict)
+    ga_config: dict[str, float | int] = Field(default_factory=dict)
 
 
 class ConflictRecord(BaseModel):
@@ -69,6 +74,35 @@ class TimetableGenerateResponse(BaseModel):
     conflict_count: int
     quality_score: float
     timetable: list[TimetableEntry]
+
+
+class SchedulerSubjectInput(BaseModel):
+    code: str
+    ltp: str
+    faculty_id: str
+    room_type: Literal["CLASSROOM", "LAB"] = "CLASSROOM"
+    elective_group: str | None = None
+    lab_block_size: int | None = None
+
+
+class SchedulerSectionInput(BaseModel):
+    section: str
+    subjects: list[SchedulerSubjectInput]
+
+
+class SchedulerAdminConfig(BaseModel):
+    working_days: list[str]
+    hours_per_day: int = Field(ge=1)
+    extra_hours: dict[str, int] = Field(default_factory=dict)
+    saturday_hours: int | None = Field(default=None, ge=1)
+    allowed_lab_block_sizes: list[int] = Field(default_factory=lambda: [2, 3, 4])
+    default_lab_block_size: int = 2
+
+
+class SchedulerGenerateResult(TimetableGenerateResponse):
+    conflicts: list[ConflictRecord] = Field(default_factory=list)
+    fitness_score: float
+    constraint_summary: dict
 
 
 class TimetableValidateRequest(BaseModel):
