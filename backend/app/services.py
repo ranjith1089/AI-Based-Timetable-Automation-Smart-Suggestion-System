@@ -4,9 +4,11 @@ from statistics import mean
 from .schemas import (
     ConflictRecord,
     ConstraintRule,
+    ElectiveGroup,
     EmergencyRescheduleRequest,
     EmergencyRescheduleResponse,
     QualityResponse,
+    SectionSubjectPlan,
     SimulationRequest,
     SimulationResponse,
     SuggestionRecord,
@@ -16,6 +18,8 @@ from .schemas import (
     TimetableGenerateRequest,
 )
 
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+MAX_PERIODS_PER_DAY = 7
 
 def _slot_load(subject: SubjectInput) -> int:
     return subject.l_hours + subject.t_hours + subject.p_hours
@@ -53,12 +57,12 @@ def generate_timetable_entries(payload: TimetableGenerateRequest) -> list[Timeta
 def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
     conflicts: list[ConflictRecord] = []
     faculty_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
-    room_map: dict[tuple[str, int], list[TimetableEntry]] = defaultdict(list)
+    room_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
     section_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
 
     for entry in timetable:
         faculty_map[(entry.faculty_id, entry.day, entry.period)].append(entry)
-        room_map[(entry.room, entry.period)].append(entry)
+        room_map[(entry.room, entry.day, entry.period)].append(entry)
         section_map[(entry.section, entry.day, entry.period)].append(entry)
 
     for (_, day, period), entries in faculty_map.items():
@@ -67,14 +71,14 @@ def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
                 conflicts.append(
                     ConflictRecord(
                         conflict_type="FACULTY",
-                        message=f"Faculty {entry.faculty_id} has multiple classes at same slot",
+                        message=f"Cross-section faculty overlap for {entry.faculty_id} at same slot",
                         section=entry.section,
                         day=day,
                         period=period,
                     )
                 )
 
-    for (_, period), entries in room_map.items():
+    for (_, day, period), entries in room_map.items():
         if len(entries) > 1:
             for entry in entries:
                 conflicts.append(
@@ -82,7 +86,7 @@ def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
                         conflict_type="ROOM",
                         message=f"Room {entry.room} double-booked at period {period}",
                         section=entry.section,
-                        day=entry.day,
+                        day=day,
                         period=period,
                     )
                 )
@@ -97,6 +101,22 @@ def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
                         section=entry.section,
                         day=day,
                         period=period,
+                    )
+                )
+
+    if elective_groups:
+        for group in elective_groups:
+            group_entries = [entry for entry in timetable if entry.section in group.sections and entry.course == group.subject]
+            grouped_slots = {(entry.day, entry.period) for entry in group_entries}
+            if len(grouped_slots) != 1 or len(group_entries) != len(group.sections):
+                first = group_entries[0] if group_entries else None
+                conflicts.append(
+                    ConflictRecord(
+                        conflict_type="SECTION",
+                        message=f"Elective group {group.group_id} is not synchronized across sections",
+                        section=first.section if first else group.sections[0],
+                        day=first.day if first else DAYS[0],
+                        period=first.period if first else 1,
                     )
                 )
 
