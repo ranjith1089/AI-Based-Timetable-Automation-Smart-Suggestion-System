@@ -5,6 +5,20 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
+class SubjectSpec(BaseModel):
+    subject_id: str | None = None
+    name: str
+    course_code: str = Field(min_length=2)
+    course_type: Literal["THEORY", "PRACTICAL", "TUTORIAL", "PROJECT"]
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    semester_id: str = Field(min_length=2)
+    program_id: str = Field(min_length=2)
+    regulation: str = Field(min_length=2)
+
+
 class User(BaseModel):
     user_id: str = Field(min_length=2)
     tenant_id: str = Field(min_length=2)
@@ -44,16 +58,7 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course_code: str
-    course_name: str
-    semester: int = Field(ge=1)
-    l_hours: int = Field(ge=0)
-    t_hours: int = Field(ge=0)
-    p_hours: int = Field(ge=0)
-    tcp: int = Field(ge=0)
-    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
-    is_elective: bool | None = None
-    requires_lab: bool | None = None
+    subject: SubjectSpec
     room: str
     faculty_id: str
 
@@ -78,9 +83,7 @@ class ExtraHourBuffer(BaseModel):
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
-    section_count: int | None = Field(default=None, ge=1)
-    section_groups: dict[str, list[str]] = Field(default_factory=dict)
-    courses: list[str]
+    subjects: list[SubjectSpec]
     rooms: list[str]
     faculty_ids: list[str]
     elective_groups: list[ElectiveGroup] = Field(default_factory=list)

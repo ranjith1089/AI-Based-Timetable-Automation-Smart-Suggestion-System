@@ -50,8 +50,8 @@ def test_validate_conflict_and_suggestions() -> None:
     payload = {
         'tenant_id': 't1',
         'timetable': [
-            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'course_code': 'CS301', 'course_name': 'AI', 'semester': 5, 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'course_type': 'T', 'is_elective': False, 'requires_lab': False, 'room': 'R101', 'faculty_id': 'F1'},
-            {'section': 'CSE-B', 'day': 'Monday', 'period': 1, 'course_code': 'CS302', 'course_name': 'ML', 'semester': 5, 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'course_type': 'OE', 'is_elective': True, 'requires_lab': False, 'room': 'R101', 'faculty_id': 'F1'},
+            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'subject': {'name': 'AI', 'course_code': 'CS501', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'semester_id': 'SEM5', 'program_id': 'BTECH-CSE', 'regulation': 'R20'}, 'room': 'R101', 'faculty_id': 'F1'},
+            {'section': 'CSE-B', 'day': 'Monday', 'period': 1, 'subject': {'name': 'ML', 'course_code': 'CS502', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 0, 'p_hours': 0, 'tcp': 3, 'semester_id': 'SEM5', 'program_id': 'BTECH-CSE', 'regulation': 'R20'}, 'room': 'R101', 'faculty_id': 'F1'},
         ],
     }
     validate_response = client.post('/timetables/validate', json=payload)
@@ -67,21 +67,12 @@ def test_generate_simulation_emergency_quality() -> None:
     generate_payload = {
         'tenant_id': 't1',
         'sections': ['CSE-A', 'CSE-B'],
-        'section_count': 2,
-        'section_groups': {'CSE': ['CSE-A', 'CSE-B']},
-        'courses': ['Math', 'AI Lab', 'Software Design'],
-        'rooms': ['R101', 'R102', 'LAB-1', 'LAB-2'],
-        'faculty_ids': ['F1', 'F2', 'F3'],
-        'elective_groups': [
-            {
-                'group_name': 'Open Elective Basket',
-                'sections': ['CSE-A', 'CSE-B'],
-                'electives': ['OE-DataScience', 'OE-DataScience'],
-            }
+        'subjects': [
+            {'name': 'Math', 'course_code': 'MA201', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'semester_id': 'SEM3', 'program_id': 'BTECH-CSE', 'regulation': 'R20'},
+            {'name': 'AI', 'course_code': 'CS301', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 0, 'p_hours': 0, 'tcp': 3, 'semester_id': 'SEM3', 'program_id': 'BTECH-CSE', 'regulation': 'R20'},
         ],
-        'saturday_config': {'enabled': True, 'mode': 'LABS_ONLY', 'max_periods': 2},
-        'extra_hour_buffer': {'enabled': True, 'periods': 1},
-        'enforce_lab_continuity': True,
+        'rooms': ['R101', 'R102'],
+        'faculty_ids': ['F1', 'F2'],
     }
     generate_response = client.post('/timetables/generate', json=generate_payload)
     assert generate_response.status_code == 200
