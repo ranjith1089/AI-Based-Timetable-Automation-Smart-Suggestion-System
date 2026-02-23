@@ -13,196 +13,48 @@ from .schemas import (
     SimulationResponse,
     SuggestionRecord,
     SuggestionResponse,
+    SubjectInput,
     TimetableEntry,
+    TimetableGenerateRequest,
 )
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
 MAX_PERIODS_PER_DAY = 7
 
-
-def _expand_section_subject_blocks(section_plans: list[SectionSubjectPlan]) -> dict[str, list[dict[str, str | bool]]]:
-    plan_map: dict[str, list[dict[str, str | bool]]] = {}
-    for section_plan in section_plans:
-        blocks: list[dict[str, str | bool]] = []
-        for block in section_plan.subject_blocks:
-            for _ in range(block.required_periods):
-                blocks.append({"course": block.subject, "is_lab": block.is_lab})
-        plan_map[section_plan.section] = blocks
-    return plan_map
+def _slot_load(subject: SubjectInput) -> int:
+    return subject.l_hours + subject.t_hours + subject.p_hours
 
 
-def _pair_with_bipartite_matching(
-    sessions: list[dict],
-    faculty_ids: list[str],
-    rooms: list[str],
-) -> bool:
-    """Assign each pending session a faculty and room using bipartite matching."""
-
-    if len(faculty_ids) < len(sessions):
-        return False
-
-    faculty_edges = {idx: list(faculty_ids) for idx in range(len(sessions))}
-    faculty_to_session: dict[str, int] = {}
-
-    def _dfs_faculty(session_idx: int, visited: set[str]) -> bool:
-        for faculty in faculty_edges[session_idx]:
-            if faculty in visited:
-                continue
-            visited.add(faculty)
-            if faculty not in faculty_to_session or _dfs_faculty(faculty_to_session[faculty], visited):
-                faculty_to_session[faculty] = session_idx
-                return True
-        return False
-
-    if sum(1 for idx in range(len(sessions)) if _dfs_faculty(idx, set())) != len(sessions):
-        return False
-
-    for faculty, session_idx in faculty_to_session.items():
-        sessions[session_idx]["faculty_id"] = faculty
-
-    room_edges: dict[int, list[str]] = {}
-    for idx, session in enumerate(sessions):
-        allowed = [room for room in rooms if ("LAB" in room.upper()) == bool(session["is_lab"])]
-        if len(allowed) < len(sessions):
-            allowed = list(rooms)
-        room_edges[idx] = allowed or list(rooms)
-
-    room_to_session: dict[str, int] = {}
-
-    def _dfs_room(session_idx: int, visited: set[str]) -> bool:
-        for room in room_edges[session_idx]:
-            if room in visited:
-                continue
-            visited.add(room)
-            if room not in room_to_session or _dfs_room(room_to_session[room], visited):
-                room_to_session[room] = session_idx
-                return True
-        return False
-
-    if sum(1 for idx in range(len(sessions)) if _dfs_room(idx, set())) != len(sessions):
-        return False
-
-    for room, session_idx in room_to_session.items():
-        sessions[session_idx]["room"] = room
-
-    return True
-
-
-def generate_section_aware_timetable(
-    tenant_id: str,
-    sections: list[str],
-    courses: list[str],
-    rooms: list[str],
-    faculty_ids: list[str],
-    section_subject_plan: list[SectionSubjectPlan],
-    elective_groups: list[ElectiveGroup],
-) -> list[TimetableEntry]:
-    section_blocks = _expand_section_subject_blocks(section_subject_plan)
-    if not section_blocks:
-        section_blocks = {section: [{"course": courses[idx % len(courses)], "is_lab": False}] for idx, section in enumerate(sections)}
-
-    for section in sections:
-        section_blocks.setdefault(section, [{"course": courses[0], "is_lab": False}])
-
+def generate_timetable_entries(payload: TimetableGenerateRequest) -> list[TimetableEntry]:
     entries: list[TimetableEntry] = []
-    used_by_section: set[tuple[str, str, int]] = set()
-    used_by_faculty: set[tuple[str, str, int]] = set()
-    used_by_room: set[tuple[str, str, int]] = set()
+    ordered_subjects = sorted(payload.subjects, key=_slot_load, reverse=True)
 
-    # Hard constraint: elective groups must be synchronized across sections.
-    for elective_idx, group in enumerate(elective_groups):
-        day = DAYS[elective_idx % len(DAYS)]
-        period = (elective_idx % MAX_PERIODS_PER_DAY) + 1
-        elective_sessions = [
-            {
-                "section": section,
-                "course": group.subject,
-                "is_lab": False,
-            }
-            for section in group.sections
-        ]
-
-        if not _pair_with_bipartite_matching(elective_sessions, group.faculty_ids, group.room_ids):
-            raise ValueError(f"Unable to assign faculty-room pairs for elective group '{group.group_id}'")
-
-        for session in elective_sessions:
-            faculty_key = (session["faculty_id"], day, period)
-            room_key = (session["room"], day, period)
-            section_key = (session["section"], day, period)
-            if faculty_key in used_by_faculty:
-                raise ValueError("Cross-section faculty overlap detected while scheduling elective groups")
-            if room_key in used_by_room or section_key in used_by_section:
-                raise ValueError("Unable to enforce synchronized elective slots without overlap")
-
-            used_by_faculty.add(faculty_key)
-            used_by_room.add(room_key)
-            used_by_section.add(section_key)
-            entries.append(
-                TimetableEntry(
-                    section=session["section"],
-                    day=day,
-                    period=period,
-                    course=group.subject,
-                    room=session["room"],
-                    faculty_id=session["faculty_id"],
-                )
+    for i, section in enumerate(payload.sections, start=1):
+        subject = ordered_subjects[(i - 1) % len(ordered_subjects)]
+        entries.append(
+            TimetableEntry(
+                section=section,
+                day="Monday",
+                period=i,
+                course_code=subject.course_code,
+                course_name=subject.course_name,
+                semester=subject.semester,
+                l_hours=subject.l_hours,
+                t_hours=subject.t_hours,
+                p_hours=subject.p_hours,
+                tcp=subject.tcp,
+                course_type=subject.course_type,
+                is_elective=subject.is_elective,
+                requires_lab=subject.requires_lab,
+                room=payload.rooms[(i - 1) % len(payload.rooms)],
+                faculty_id=payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
             )
-
-        for section in group.sections:
-            section_blocks[section] = [block for block in section_blocks[section] if block["course"] != group.subject]
-
-    # Remaining section-specific sessions.
-    cursors = {section: 0 for section in section_blocks}
-    pending_sections = [section for section, blocks in section_blocks.items() if blocks]
-    slot_idx = 0
-
-    while pending_sections:
-        day = DAYS[(slot_idx // MAX_PERIODS_PER_DAY) % len(DAYS)]
-        period = (slot_idx % MAX_PERIODS_PER_DAY) + 1
-        candidate_sessions: list[dict] = []
-
-        for section in list(pending_sections):
-            block_idx = cursors[section]
-            if block_idx >= len(section_blocks[section]):
-                pending_sections.remove(section)
-                continue
-            if (section, day, period) in used_by_section:
-                continue
-            block = section_blocks[section][block_idx]
-            candidate_sessions.append({"section": section, "course": block["course"], "is_lab": block["is_lab"]})
-
-        if candidate_sessions and _pair_with_bipartite_matching(candidate_sessions, faculty_ids, rooms):
-            for session in candidate_sessions:
-                faculty_key = (session["faculty_id"], day, period)
-                room_key = (session["room"], day, period)
-                section_key = (session["section"], day, period)
-                if faculty_key in used_by_faculty or room_key in used_by_room or section_key in used_by_section:
-                    continue
-
-                used_by_faculty.add(faculty_key)
-                used_by_room.add(room_key)
-                used_by_section.add(section_key)
-                entries.append(
-                    TimetableEntry(
-                        section=session["section"],
-                        day=day,
-                        period=period,
-                        course=str(session["course"]),
-                        room=str(session["room"]),
-                        faculty_id=str(session["faculty_id"]),
-                    )
-                )
-                cursors[session["section"]] += 1
-
-        pending_sections = [section for section in pending_sections if cursors[section] < len(section_blocks[section])]
-        slot_idx += 1
-        if slot_idx > len(DAYS) * MAX_PERIODS_PER_DAY * 4:
-            raise ValueError("Unable to place all section subject blocks within available slots")
+        )
 
     return entries
 
 
-def detect_conflicts(timetable: list[TimetableEntry], elective_groups: list[ElectiveGroup] | None = None) -> list[ConflictRecord]:
+def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
     conflicts: list[ConflictRecord] = []
     faculty_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
     room_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)

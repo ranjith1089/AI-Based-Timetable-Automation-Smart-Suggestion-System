@@ -33,6 +33,7 @@ from .services import (
     build_suggestions,
     calculate_quality,
     detect_conflicts,
+    generate_timetable_entries,
     emergency_reschedule,
     run_simulation,
     generate_section_aware_timetable,
@@ -149,24 +150,10 @@ def validate_timetable(payload: TimetableValidateRequest) -> dict:
 
 @app.post("/timetables/generate", response_model=TimetableGenerateResponse)
 def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
-    if not payload.courses or not payload.rooms or not payload.faculty_ids:
-        raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
+    if not payload.subjects or not payload.rooms or not payload.faculty_ids:
+        raise HTTPException(status_code=400, detail="subjects, rooms, and faculty_ids are required")
 
-    try:
-        entries = generate_section_aware_timetable(
-            tenant_id=payload.tenant_id,
-            sections=payload.sections,
-            courses=payload.courses,
-            rooms=payload.rooms,
-            faculty_ids=payload.faculty_ids,
-            section_subject_plan=payload.section_subject_plan,
-            elective_groups=payload.elective_groups,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    conflicts = detect_conflicts(entries, payload.elective_groups)
-    quality = calculate_quality(payload.tenant_id, entries, len(conflicts))
+    entries = generate_timetable_entries(payload)
 
     response = TimetableGenerateResponse(
         tenant_id=payload.tenant_id,

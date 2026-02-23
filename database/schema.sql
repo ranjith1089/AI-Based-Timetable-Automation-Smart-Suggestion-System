@@ -96,9 +96,17 @@ CREATE TABLE faculty_availability (
 CREATE TABLE subjects (
   subject_id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
-  name VARCHAR(255) NOT NULL,
-  credits INT NOT NULL DEFAULT 3,
-  is_lab BOOLEAN NOT NULL DEFAULT FALSE
+  course_code VARCHAR(64) NOT NULL,
+  course_name VARCHAR(255) NOT NULL,
+  semester INT NOT NULL CHECK (semester >= 1),
+  l_hours INT NOT NULL DEFAULT 0 CHECK (l_hours >= 0),
+  t_hours INT NOT NULL DEFAULT 0 CHECK (t_hours >= 0),
+  p_hours INT NOT NULL DEFAULT 0 CHECK (p_hours >= 0),
+  tcp INT NOT NULL DEFAULT 0 CHECK (tcp >= 0),
+  course_type VARCHAR(8) NOT NULL CHECK (course_type IN ('T', 'L', 'LIT', 'SD', 'HUM', 'PE', 'OE')),
+  is_elective BOOLEAN,
+  requires_lab BOOLEAN,
+  UNIQUE (tenant_id, course_code, semester)
 );
 
 

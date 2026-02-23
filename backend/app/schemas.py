@@ -42,34 +42,37 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course: str
+    course_code: str
+    course_name: str
+    semester: int = Field(ge=1)
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
+    is_elective: bool | None = None
+    requires_lab: bool | None = None
     room: str
     faculty_id: str
 
 
-class SubjectBlock(BaseModel):
-    subject: str
-    required_periods: int = Field(ge=1, le=10, default=1)
-    is_lab: bool = False
-
-
-class SectionSubjectPlan(BaseModel):
-    section: str
-    subject_blocks: list[SubjectBlock]
-
-
-class ElectiveGroup(BaseModel):
-    group_id: str
-    subject: str
-    sections: list[str] = Field(min_length=1)
-    faculty_ids: list[str] = Field(min_length=1)
-    room_ids: list[str] = Field(min_length=1)
+class SubjectInput(BaseModel):
+    course_code: str = Field(min_length=2)
+    course_name: str = Field(min_length=2)
+    semester: int = Field(ge=1)
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
+    is_elective: bool | None = None
+    requires_lab: bool | None = None
 
 
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
-    courses: list[str]
+    subjects: list[SubjectInput]
     rooms: list[str]
     faculty_ids: list[str]
     section_subject_plan: list[SectionSubjectPlan] = Field(default_factory=list)
