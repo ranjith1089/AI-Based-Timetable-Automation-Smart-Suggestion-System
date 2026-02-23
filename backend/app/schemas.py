@@ -124,3 +124,21 @@ class QualityResponse(BaseModel):
     room_utilization: float
     clash_risk: float
     overall_quality: float
+
+
+class ExtractedSubject(BaseModel):
+    semester: str
+    code: str
+    name: str
+    course_type: str
+    L: int = Field(ge=0)
+    T: int = Field(ge=0)
+    P: int = Field(ge=0)
+    TCP: int = Field(ge=0)
+    credits: int = Field(ge=0)
+
+
+class SubjectImportResponse(BaseModel):
+    semesters: dict[str, list[ExtractedSubject]]
+    errors: list[dict] = Field(default_factory=list)
+    total_subjects: int

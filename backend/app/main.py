@@ -8,10 +8,11 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import check_connection, _get_engine
+from .pdf_ingestion import extract_raw_tables, normalize_subject_rows
 from .schemas import (
     AccessScope,
     ConstraintRule,
@@ -20,6 +21,7 @@ from .schemas import (
     QualityResponse,
     SimulationRequest,
     SimulationResponse,
+    SubjectImportResponse,
     SuggestionResponse,
     TimetableGenerateRequest,
     TimetableGenerateResponse,
@@ -179,3 +181,28 @@ def handle_emergency(payload: EmergencyRescheduleRequest) -> EmergencyReschedule
 def timetable_quality(payload: TimetableValidateRequest) -> QualityResponse:
     conflicts = detect_conflicts(payload.timetable)
     return calculate_quality(payload.tenant_id, payload.timetable, len(conflicts))
+
+
+@app.post("/subjects/import-pdf", response_model=SubjectImportResponse)
+async def import_subjects_pdf(
+    pdf_content: bytes = Body(..., media_type="application/pdf"),
+) -> SubjectImportResponse:
+    if not pdf_content:
+        raise HTTPException(status_code=400, detail="Empty PDF payload")
+
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(pdf_content)
+        tmp_path = tmp.name
+
+    try:
+        rows = extract_raw_tables(tmp_path)
+        semesters, errors = normalize_subject_rows(rows)
+        total_subjects = sum(len(subjects) for subjects in semesters.values())
+        return SubjectImportResponse(semesters=semesters, errors=errors, total_subjects=total_subjects)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
