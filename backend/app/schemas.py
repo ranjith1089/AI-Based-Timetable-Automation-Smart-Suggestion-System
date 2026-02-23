@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal, Union
+
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
@@ -23,11 +25,6 @@ class AccessScope(BaseModel):
     can_publish: bool = False
 
 
-class FacultyAvailability(BaseModel):
-    faculty_id: str
-    available_slots: list[str]
-
-
 class ConstraintRule(BaseModel):
     rule_id: str
     tenant_id: str
@@ -38,11 +35,25 @@ class ConstraintRule(BaseModel):
     params: dict = Field(default_factory=dict)
 
 
+class SubjectSpec(BaseModel):
+    name: str
+    course_code: str
+    course_type: str
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    semester_id: str
+    program_id: str
+    regulation: str
+
+
 class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    subject: SubjectSpec
+    subject: SubjectSpec | None = None
+    course: str | None = None
     room: str
     faculty_id: str
 
@@ -53,21 +64,11 @@ class ElectiveGroup(BaseModel):
     electives: list[str]
 
 
-class SaturdayConfig(BaseModel):
-    enabled: bool = False
-    mode: Literal["LABS_ONLY", "SD_ELECTIVE_FOCUS", "OVERFLOW"] = "OVERFLOW"
-    max_periods: int = Field(default=4, ge=1, le=8)
-
-
-class ExtraHourBuffer(BaseModel):
-    enabled: bool = False
-    periods: int = Field(default=0, ge=0, le=3)
-
-
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[Union[str, "SchedulerSectionInput"]]
     courses: list[str] = Field(default_factory=list)
+    subjects: list[SubjectSpec] = Field(default_factory=list)
     rooms: list[str]
     faculty_ids: list[str]
     working_days: int = Field(default=5, ge=1, le=6)
@@ -78,7 +79,13 @@ class TimetableGenerateRequest(BaseModel):
     lab_continuous_hours: int = Field(default=2, ge=1, le=4)
 
     @model_validator(mode="after")
-    def validate_generation_config(self) -> "TimetableGenerateRequest":
+    def normalize_course_inputs(self) -> "TimetableGenerateRequest":
+        if not self.courses and self.subjects:
+            self.courses = [subject.name for subject in self.subjects]
+
+        if not self.courses:
+            raise ValueError("At least one course or subject is required")
+
         if self.saturday_enabled:
             if self.working_days > 5:
                 raise ValueError("working_days cannot exceed 5 when saturday_enabled is true")
@@ -110,7 +117,16 @@ class TimetableVersionRecord(BaseModel):
     timetable_id: str
     version: int
     tenant_id: str
-    generation_config: TimetableGenerationConfig
+    generation_config: TimetableGenerationConfig = Field(
+        default_factory=lambda: TimetableGenerationConfig(
+            working_days=5,
+            hours_per_day=6,
+            extra_hours=0,
+            saturday_enabled=False,
+            saturday_hours=0,
+            lab_continuous_hours=2,
+        )
+    )
 
 
 class ConflictRecord(BaseModel):
@@ -122,15 +138,24 @@ class ConflictRecord(BaseModel):
 
 
 class TimetableGenerateResponse(BaseModel):
-    timetable_id: str
-    version: int
+    timetable_id: str = "generated"
+    version: int = 1
     tenant_id: str
     generated: bool
     conflict_count: int
     quality_score: float
-    generation_config: TimetableGenerationConfig
+    generation_config: TimetableGenerationConfig = Field(
+        default_factory=lambda: TimetableGenerationConfig(
+            working_days=5,
+            hours_per_day=6,
+            extra_hours=0,
+            saturday_enabled=False,
+            saturday_hours=0,
+            lab_continuous_hours=2,
+        )
+    )
     timetable: list[TimetableEntry]
-    section_timetables: dict[str, list[TimetableEntry]]
+    section_timetables: dict[str, list[TimetableEntry]] = Field(default_factory=dict)
     allocation_rationale: list[str] = Field(default_factory=list)
 
 
@@ -219,6 +244,16 @@ class QualityResponse(BaseModel):
     overall_quality: float
 
 
+class RoomSpec(BaseModel):
+    room_id: str
+    room_type: Literal["CLASSROOM", "LAB"] = "CLASSROOM"
+
+
+class AdminConfig(BaseModel):
+    working_days: int = 5
+    hours_per_day: int = 6
+
+
 class ExtractedSubject(BaseModel):
     semester: str
     code: str
@@ -235,3 +270,8 @@ class SubjectImportResponse(BaseModel):
     semesters: dict[str, list[ExtractedSubject]]
     errors: list[dict] = Field(default_factory=list)
     total_subjects: int
+
+
+class CurriculumImportResponse(BaseModel):
+    imported: bool = True
+    message: str = "Curriculum import completed"

@@ -103,7 +103,7 @@ def test_generate_simulation_emergency_quality() -> None:
 
     quality_payload = {
         'tenant_id': 't1',
-        'timetable': generated['timetable'],
+        'timetable': body['timetable'],
     }
     quality_response = client.post('/timetables/quality', json=quality_payload)
     assert quality_response.status_code == 200

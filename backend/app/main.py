@@ -19,7 +19,6 @@ from .schemas import (
     ElectiveGroup,
     EmergencyRescheduleRequest,
     EmergencyRescheduleResponse,
-    CurriculumImportResponse,
     QualityResponse,
     SimulationRequest,
     SimulationResponse,
@@ -27,28 +26,19 @@ from .schemas import (
     SuggestionResponse,
     SubjectSpec,
     TimetableGenerateRequest,
-    SchedulerAdminConfig,
-    SchedulerGenerateResult,
     SchedulerSectionInput,
-    SchedulerSubjectInput,
     TimetableGenerateResponse,
     TimetableGenerationConfig,
     TimetableValidateRequest,
     TimetableVersionRecord,
     User,
-    AdminConfig,
-    RoomSpec,
 )
-from .scheduler.engine import run_scheduler
 from .services import (
     build_suggestions,
     calculate_quality,
     detect_conflicts,
-    generate_timetable_entries,
     emergency_reschedule,
-    generate_timetable_entries,
     run_simulation,
-    generate_section_aware_timetable,
     validate_constraints,
 )
 
@@ -192,9 +182,11 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
     for period in range(1, payload.extra_hours + 1):
         day_period_map.append(("Extra", period))
 
+    section_ids = [section.section if isinstance(section, SchedulerSectionInput) else section for section in payload.sections]
+
     entries = []
     index = 0
-    for section in payload.sections:
+    for section in section_ids:
         for day, period in day_period_map:
             entries.append(
                 {
@@ -220,6 +212,10 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
     )
     versions.append(version_record)
 
+    section_timetables: dict[str, list[dict]] = {}
+    for entry in entries:
+        section_timetables.setdefault(entry["section"], []).append(entry)
+
     response = TimetableGenerateResponse(
         timetable_id=timetable_id,
         version=version,
@@ -229,6 +225,8 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
         quality_score=82.0,
         generation_config=generation_config,
         timetable=entries,
+        section_timetables=section_timetables,
+        allocation_rationale=["Round-robin allocation applied across sections, rooms, and faculty."],
     )
     TIMETABLE_CACHE[timetable_id] = response
     return response
