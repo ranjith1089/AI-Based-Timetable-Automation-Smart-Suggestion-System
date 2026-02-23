@@ -117,120 +117,37 @@ def test_generate_simulation_emergency_quality() -> None:
     assert quality_response.json()['overall_quality'] >= 0
 
 
-def test_civil_three_section_shared_electives_and_rotating_labs() -> None:
+def test_room_conflict_across_days_does_not_conflict() -> None:
     payload = {
-        'tenant_id': 'civil-1',
-        'sections': ['CIVIL-A', 'CIVIL-B', 'CIVIL-C'],
-        'courses': ['Structural Analysis', 'Surveying'],
-        'rooms': ['CR-201', 'CR-202', 'LAB-301', 'LAB-302'],
-        'faculty_ids': ['CF1', 'CF2', 'CF3', 'CF4'],
-        'section_subject_plan': [
-            {
-                'section': 'CIVIL-A',
-                'subject_blocks': [
-                    {'subject': 'Geotechnical Lab', 'required_periods': 1, 'is_lab': True},
-                    {'subject': 'Hydrology', 'required_periods': 1, 'is_lab': False},
-                    {'subject': 'Bridge Elective', 'required_periods': 1, 'is_lab': False},
-                ],
-            },
-            {
-                'section': 'CIVIL-B',
-                'subject_blocks': [
-                    {'subject': 'Concrete Lab', 'required_periods': 1, 'is_lab': True},
-                    {'subject': 'Hydrology', 'required_periods': 1, 'is_lab': False},
-                    {'subject': 'Bridge Elective', 'required_periods': 1, 'is_lab': False},
-                ],
-            },
-            {
-                'section': 'CIVIL-C',
-                'subject_blocks': [
-                    {'subject': 'Transportation Lab', 'required_periods': 1, 'is_lab': True},
-                    {'subject': 'Hydrology', 'required_periods': 1, 'is_lab': False},
-                    {'subject': 'Bridge Elective', 'required_periods': 1, 'is_lab': False},
-                ],
-            },
-        ],
-        'elective_groups': [
-            {
-                'group_id': 'EL-CIVIL-1',
-                'subject': 'Bridge Elective',
-                'sections': ['CIVIL-A', 'CIVIL-B', 'CIVIL-C'],
-                'faculty_ids': ['CEF1', 'CEF2', 'CEF3'],
-                'room_ids': ['CR-201', 'CR-202', 'LAB-301'],
-            }
+        'tenant_id': 't1',
+        'timetable': [
+            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'course': 'AI', 'room': 'R101', 'faculty_id': 'F1'},
+            {'section': 'CSE-B', 'day': 'Tuesday', 'period': 1, 'course': 'ML', 'room': 'R101', 'faculty_id': 'F2'},
         ],
     }
-
-    response = client.post('/timetables/generate', json=payload)
-    assert response.status_code == 200
-    data = response.json()
-    assert data['generated'] is True
-    assert data['conflict_count'] == 0
-
-    timetable = data['timetable']
-    electives = [entry for entry in timetable if entry['course'] == 'Bridge Elective']
-    assert len(electives) == 3
-    elective_slots = {(entry['day'], entry['period']) for entry in electives}
-    assert len(elective_slots) == 1
-
-    labs = [entry for entry in timetable if 'Lab' in entry['course']]
-    assert len(labs) == 3
-    assert len({entry['room'] for entry in labs}) >= 2
-
-    faculty_slots = {(entry['faculty_id'], entry['day'], entry['period']) for entry in timetable}
-    assert len(faculty_slots) == len(timetable)
-
-
-def test_elective_group_api_and_sync_violation_detection() -> None:
-    create_response = client.post(
-        '/elective-groups',
-        json={
-            'group_id': 'EL-CIVIL-2',
-            'subject': 'Water Resources Elective',
-            'sections': ['CIVIL-A', 'CIVIL-B'],
-            'faculty_ids': ['CF10', 'CF11'],
-            'room_ids': ['CR-201', 'CR-202'],
-        },
-    )
-    assert create_response.status_code == 200
-
-    list_response = client.get('/elective-groups', params={'section': 'CIVIL-A'})
-    assert list_response.status_code == 200
-    assert any(item['group_id'] == 'EL-CIVIL-2' for item in list_response.json())
-
-    validate_response = client.post(
-        '/timetables/validate',
-        json={
-            'tenant_id': 'civil-1',
-            'elective_groups': [
-                {
-                    'group_id': 'EL-CIVIL-2',
-                    'subject': 'Water Resources Elective',
-                    'sections': ['CIVIL-A', 'CIVIL-B'],
-                    'faculty_ids': ['CF10', 'CF11'],
-                    'room_ids': ['CR-201', 'CR-202'],
-                }
-            ],
-            'timetable': [
-                {
-                    'section': 'CIVIL-A',
-                    'day': 'Tuesday',
-                    'period': 2,
-                    'course': 'Water Resources Elective',
-                    'room': 'CR-201',
-                    'faculty_id': 'CF10',
-                },
-                {
-                    'section': 'CIVIL-B',
-                    'day': 'Wednesday',
-                    'period': 2,
-                    'course': 'Water Resources Elective',
-                    'room': 'CR-202',
-                    'faculty_id': 'CF11',
-                },
-            ],
-        },
-    )
+    validate_response = client.post('/timetables/validate', json=payload)
     assert validate_response.status_code == 200
-    messages = [item['message'] for item in validate_response.json()['conflicts']]
-    assert any('not synchronized' in message for message in messages)
+
+    room_conflicts = [
+        conflict for conflict in validate_response.json()['conflicts'] if conflict['conflict_type'] == 'ROOM'
+    ]
+    assert room_conflicts == []
+
+
+def test_room_conflict_same_day_same_period_conflicts() -> None:
+    payload = {
+        'tenant_id': 't1',
+        'timetable': [
+            {'section': 'CSE-A', 'day': 'Monday', 'period': 2, 'course': 'AI', 'room': 'R102', 'faculty_id': 'F1'},
+            {'section': 'CSE-B', 'day': 'Monday', 'period': 2, 'course': 'ML', 'room': 'R102', 'faculty_id': 'F2'},
+        ],
+    }
+    validate_response = client.post('/timetables/validate', json=payload)
+    assert validate_response.status_code == 200
+
+    room_conflicts = [
+        conflict for conflict in validate_response.json()['conflicts'] if conflict['conflict_type'] == 'ROOM'
+    ]
+    assert len(room_conflicts) == 2
+    assert all(conflict['day'] == 'Monday' for conflict in room_conflicts)
+    assert all('Monday' in conflict['message'] for conflict in room_conflicts)

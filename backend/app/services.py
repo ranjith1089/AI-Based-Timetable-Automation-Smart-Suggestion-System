@@ -84,7 +84,7 @@ def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
                 conflicts.append(
                     ConflictRecord(
                         conflict_type="ROOM",
-                        message=f"Room {entry.room} double-booked on {day} period {period}",
+                        message=f"Room {entry.room} double-booked on {day} at period {period}",
                         section=entry.section,
                         day=day,
                         period=period,
