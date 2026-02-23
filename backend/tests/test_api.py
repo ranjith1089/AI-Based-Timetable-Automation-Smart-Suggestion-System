@@ -76,6 +76,10 @@ def test_generate_simulation_emergency_quality() -> None:
     }
     generate_response = client.post('/timetables/generate', json=generate_payload)
     assert generate_response.status_code == 200
+    generated = generate_response.json()
+    assert 'score_breakdown' in generated
+    assert 'diagnostics' in generated
+    assert generated['score_breakdown']['final_score'] >= 0
 
     simulation_payload = {
         'tenant_id': 't1',
@@ -99,7 +103,7 @@ def test_generate_simulation_emergency_quality() -> None:
 
     quality_payload = {
         'tenant_id': 't1',
-        'timetable': generate_response.json()['timetable'],
+        'timetable': generated['timetable'],
     }
     quality_response = client.post('/timetables/quality', json=quality_payload)
     assert quality_response.status_code == 200
