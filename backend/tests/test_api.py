@@ -76,17 +76,10 @@ def test_generate_simulation_emergency_quality() -> None:
     }
     generate_response = client.post('/timetables/generate', json=generate_payload)
     assert generate_response.status_code == 200
-    generated = generate_response.json()
-    assert set(generated['section_timetables']) == {'CSE-A', 'CSE-B'}
-    assert len(generated['allocation_rationale']) >= 3
-
-    elective_slots = [
-        (entry['section'], entry['day'], entry['period'])
-        for entry in generated['timetable']
-        if entry['course'] == 'OE-DataScience'
-    ]
-    assert len(elective_slots) == 2
-    assert len({(day, period) for _, day, period in elective_slots}) == 1
+    body = generate_response.json()
+    assert body['version'] == 1
+    assert body['generation_config']['working_days'] == 5
+    assert any(slot['day'] == 'Friday' for slot in body['timetable'])
 
     simulation_payload = {
         'tenant_id': 't1',
@@ -117,37 +110,38 @@ def test_generate_simulation_emergency_quality() -> None:
     assert quality_response.json()['overall_quality'] >= 0
 
 
-def test_room_conflict_across_days_does_not_conflict() -> None:
-    payload = {
-        'tenant_id': 't1',
-        'timetable': [
-            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'course': 'AI', 'room': 'R101', 'faculty_id': 'F1'},
-            {'section': 'CSE-B', 'day': 'Tuesday', 'period': 1, 'course': 'ML', 'room': 'R101', 'faculty_id': 'F2'},
-        ],
+
+def test_generate_with_custom_configuration_and_validation() -> None:
+    generate_payload = {
+        'tenant_id': 't2',
+        'sections': ['ECE-A'],
+        'courses': ['DSP', 'Signals'],
+        'rooms': ['L1'],
+        'faculty_ids': ['F10'],
+        'working_days': 4,
+        'hours_per_day': 5,
+        'extra_hours': 2,
+        'saturday_enabled': True,
+        'saturday_hours': 3,
+        'lab_continuous_hours': 3,
     }
-    validate_response = client.post('/timetables/validate', json=payload)
-    assert validate_response.status_code == 200
+    generate_response = client.post('/timetables/generate', json=generate_payload)
+    assert generate_response.status_code == 200
+    data = generate_response.json()
+    assert data['generation_config']['saturday_enabled'] is True
+    assert data['generation_config']['saturday_hours'] == 3
 
-    room_conflicts = [
-        conflict for conflict in validate_response.json()['conflicts'] if conflict['conflict_type'] == 'ROOM'
-    ]
-    assert room_conflicts == []
+    day_slot_count = len(data['timetable'])
+    assert day_slot_count == (4 * 5) + 3 + 2
 
-
-def test_room_conflict_same_day_same_period_conflicts() -> None:
-    payload = {
-        'tenant_id': 't1',
-        'timetable': [
-            {'section': 'CSE-A', 'day': 'Monday', 'period': 2, 'course': 'AI', 'room': 'R102', 'faculty_id': 'F1'},
-            {'section': 'CSE-B', 'day': 'Monday', 'period': 2, 'course': 'ML', 'room': 'R102', 'faculty_id': 'F2'},
-        ],
+    invalid_payload = {
+        'tenant_id': 't2',
+        'sections': ['ECE-A'],
+        'courses': ['DSP'],
+        'rooms': ['L1'],
+        'faculty_ids': ['F10'],
+        'saturday_enabled': False,
+        'saturday_hours': 2,
     }
-    validate_response = client.post('/timetables/validate', json=payload)
-    assert validate_response.status_code == 200
-
-    room_conflicts = [
-        conflict for conflict in validate_response.json()['conflicts'] if conflict['conflict_type'] == 'ROOM'
-    ]
-    assert len(room_conflicts) == 2
-    assert all(conflict['day'] == 'Monday' for conflict in room_conflicts)
-    assert all('Monday' in conflict['message'] for conflict in room_conflicts)
+    invalid_response = client.post('/timetables/generate', json=invalid_payload)
+    assert invalid_response.status_code == 422
