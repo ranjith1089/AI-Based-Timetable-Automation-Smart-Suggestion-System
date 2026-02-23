@@ -67,19 +67,35 @@ def test_generate_simulation_emergency_quality() -> None:
     generate_payload = {
         'tenant_id': 't1',
         'sections': ['CSE-A', 'CSE-B'],
-        'subjects': [
-            {'course_code': 'MA201', 'course_name': 'Math', 'semester': 3, 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'course_type': 'T', 'is_elective': False, 'requires_lab': False},
-            {'course_code': 'CS301', 'course_name': 'AI', 'semester': 5, 'l_hours': 3, 't_hours': 0, 'p_hours': 2, 'tcp': 5, 'course_type': 'LIT', 'is_elective': True, 'requires_lab': True},
+        'section_count': 2,
+        'section_groups': {'CSE': ['CSE-A', 'CSE-B']},
+        'courses': ['Math', 'AI Lab', 'Software Design'],
+        'rooms': ['R101', 'R102', 'LAB-1', 'LAB-2'],
+        'faculty_ids': ['F1', 'F2', 'F3'],
+        'elective_groups': [
+            {
+                'group_name': 'Open Elective Basket',
+                'sections': ['CSE-A', 'CSE-B'],
+                'electives': ['OE-DataScience', 'OE-DataScience'],
+            }
         ],
-        'rooms': ['R101', 'R102'],
-        'faculty_ids': ['F1', 'F2'],
+        'saturday_config': {'enabled': True, 'mode': 'LABS_ONLY', 'max_periods': 2},
+        'extra_hour_buffer': {'enabled': True, 'periods': 1},
+        'enforce_lab_continuity': True,
     }
     generate_response = client.post('/timetables/generate', json=generate_payload)
     assert generate_response.status_code == 200
     generated = generate_response.json()
-    assert 'score_breakdown' in generated
-    assert 'diagnostics' in generated
-    assert generated['score_breakdown']['final_score'] >= 0
+    assert set(generated['section_timetables']) == {'CSE-A', 'CSE-B'}
+    assert len(generated['allocation_rationale']) >= 3
+
+    elective_slots = [
+        (entry['section'], entry['day'], entry['period'])
+        for entry in generated['timetable']
+        if entry['course'] == 'OE-DataScience'
+    ]
+    assert len(elective_slots) == 2
+    assert len({(day, period) for _, day, period in elective_slots}) == 1
 
     simulation_payload = {
         'tenant_id': 't1',

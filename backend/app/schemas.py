@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 
 class User(BaseModel):
@@ -58,29 +58,42 @@ class TimetableEntry(BaseModel):
     faculty_id: str
 
 
-class SubjectInput(BaseModel):
-    course_code: str = Field(min_length=2)
-    course_name: str = Field(min_length=2)
-    semester: int = Field(ge=1)
-    l_hours: int = Field(ge=0)
-    t_hours: int = Field(ge=0)
-    p_hours: int = Field(ge=0)
-    tcp: int = Field(ge=0)
-    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
-    is_elective: bool | None = None
-    requires_lab: bool | None = None
+class ElectiveGroup(BaseModel):
+    group_name: str
+    sections: list[str]
+    electives: list[str]
+
+
+class SaturdayConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["LABS_ONLY", "SD_ELECTIVE_FOCUS", "OVERFLOW"] = "OVERFLOW"
+    max_periods: int = Field(default=4, ge=1, le=8)
+
+
+class ExtraHourBuffer(BaseModel):
+    enabled: bool = False
+    periods: int = Field(default=0, ge=0, le=3)
 
 
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
-    courses: list[str] = Field(default_factory=list)
-    rooms: list[str] = Field(default_factory=list)
+    section_count: int | None = Field(default=None, ge=1)
+    section_groups: dict[str, list[str]] = Field(default_factory=dict)
+    courses: list[str]
+    rooms: list[str]
     faculty_ids: list[str]
-    subjects: list[SubjectSpec] = Field(default_factory=list)
-    room_specs: list[RoomSpec] = Field(default_factory=list)
-    admin_config: AdminConfig | None = None
-    optimizer: dict[str, int] = Field(default_factory=dict)
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
+    saturday_config: SaturdayConfig = Field(default_factory=SaturdayConfig)
+    extra_hour_buffer: ExtraHourBuffer = Field(default_factory=ExtraHourBuffer)
+    enforce_lab_continuity: bool = True
+
+    @model_validator(mode="after")
+    def validate_section_count(self) -> "TimetableGenerateRequest":
+        expected_count = self.section_count or len(self.sections)
+        if expected_count != len(self.sections):
+            raise ValueError("section_count must match number of sections supplied")
+        return self
 
 
 class ConflictRecord(BaseModel):
@@ -97,49 +110,8 @@ class TimetableGenerateResponse(BaseModel):
     conflict_count: int
     quality_score: float
     timetable: list[TimetableEntry]
-    score_breakdown: ScoreBreakdown
-    diagnostics: SchedulerDiagnostics
-
-
-class SubjectSpec(BaseModel):
-    subject: str
-    faculty_id: str
-    ltp: tuple[int, int, int]
-    difficulty: int = Field(default=3, ge=1, le=5)
-    lab_block_size: int | None = Field(default=None, ge=1)
-
-
-class RoomSpec(BaseModel):
-    name: str
-    is_lab: bool = False
-
-
-class AdminConfig(BaseModel):
-    days: list[str] = Field(default_factory=list)
-    hours_per_day: int = Field(default=6, ge=1)
-    include_saturday: bool = False
-    extra_slots: int = Field(default=0, ge=0)
-
-
-class AssignmentConflict(BaseModel):
-    conflict_type: Literal["FACULTY", "ROOM", "SECTION"]
-    message: str
-    section: str
-    day: str
-    period: int
-
-
-class ScoreBreakdown(BaseModel):
-    hard_penalty: int
-    subject_spread_penalty: int
-    fatigue_penalty: int
-    heavy_subject_penalty: int
-    final_score: float
-
-
-class SchedulerDiagnostics(BaseModel):
-    hard_conflicts: list[AssignmentConflict]
-    soft_constraint_notes: list[str]
+    section_timetables: dict[str, list[TimetableEntry]]
+    allocation_rationale: list[str] = Field(default_factory=list)
 
 
 class TimetableValidateRequest(BaseModel):
