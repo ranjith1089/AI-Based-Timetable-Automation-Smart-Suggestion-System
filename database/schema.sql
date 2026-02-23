@@ -96,9 +96,41 @@ CREATE TABLE faculty_availability (
 CREATE TABLE subjects (
   subject_id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
-  name VARCHAR(255) NOT NULL,
-  credits INT NOT NULL DEFAULT 3,
+  course_code VARCHAR(64) NOT NULL,
+  course_name VARCHAR(255) NOT NULL,
+  semester INT NOT NULL CHECK (semester >= 1),
+  l_hours INT NOT NULL DEFAULT 0 CHECK (l_hours >= 0),
+  t_hours INT NOT NULL DEFAULT 0 CHECK (t_hours >= 0),
+  p_hours INT NOT NULL DEFAULT 0 CHECK (p_hours >= 0),
+  tcp INT NOT NULL DEFAULT 0 CHECK (tcp >= 0),
+  course_type VARCHAR(8) NOT NULL CHECK (course_type IN ('T', 'L', 'LIT', 'SD', 'HUM', 'PE', 'OE')),
+  is_elective BOOLEAN,
+  requires_lab BOOLEAN,
+  UNIQUE (tenant_id, course_code, semester)
+);
+
+
+CREATE TABLE section_subject_blocks (
+  block_id BIGSERIAL PRIMARY KEY,
+  tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
+  section_id VARCHAR(64) NOT NULL REFERENCES sections(section_id),
+  subject_id VARCHAR(64) NOT NULL REFERENCES subjects(subject_id),
+  required_periods INT NOT NULL CHECK (required_periods >= 1),
   is_lab BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE TABLE elective_groups (
+  group_id VARCHAR(64) PRIMARY KEY,
+  tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
+  subject_id VARCHAR(64) NOT NULL REFERENCES subjects(subject_id),
+  synchronized_day VARCHAR(20),
+  synchronized_period INT
+);
+
+CREATE TABLE elective_group_sections (
+  group_id VARCHAR(64) NOT NULL REFERENCES elective_groups(group_id),
+  section_id VARCHAR(64) NOT NULL REFERENCES sections(section_id),
+  PRIMARY KEY (group_id, section_id)
 );
 
 CREATE TABLE rooms (

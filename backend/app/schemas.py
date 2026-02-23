@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -42,7 +44,16 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course: str
+    course_code: str
+    course_name: str
+    semester: int = Field(ge=1)
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    course_type: Literal["T", "L", "LIT", "SD", "HUM", "PE", "OE"]
+    is_elective: bool | None = None
+    requires_lab: bool | None = None
     room: str
     faculty_id: str
 
@@ -106,6 +117,7 @@ class TimetableGenerateResponse(BaseModel):
 class TimetableValidateRequest(BaseModel):
     tenant_id: str
     timetable: list[TimetableEntry]
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
 
 
 class SuggestionRecord(BaseModel):
@@ -156,3 +168,33 @@ class QualityResponse(BaseModel):
     room_utilization: float
     clash_risk: float
     overall_quality: float
+
+
+class CurriculumImportRequest(BaseModel):
+    tenant_id: str
+
+
+class ExtractedSubject(BaseModel):
+    semester: int = Field(ge=1, le=12)
+    course_code: str
+    course_name: str
+    course_type: str
+    l: int = Field(ge=0)
+    t: int = Field(ge=0)
+    p: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    credits: float = Field(ge=0)
+
+
+class SemesterExtractionSummary(BaseModel):
+    semester: int
+    subject_count: int
+    total_credits: float
+
+
+class CurriculumImportResponse(BaseModel):
+    tenant_id: str
+    extracted_count: int
+    persisted_count: int
+    semesters: list[SemesterExtractionSummary]
+    subjects: list[ExtractedSubject]

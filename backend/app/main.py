@@ -8,31 +8,40 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import check_connection, _get_engine
+from .pdf_ingestion import extract_subjects_from_pdf, persist_subjects, validate_by_semester
 from .schemas import (
     AccessScope,
     ConstraintRule,
+    ElectiveGroup,
     EmergencyRescheduleRequest,
     EmergencyRescheduleResponse,
+    CurriculumImportResponse,
     QualityResponse,
     SimulationRequest,
     SimulationResponse,
     SuggestionResponse,
+    SubjectSpec,
     TimetableGenerateRequest,
     TimetableGenerateResponse,
     TimetableValidateRequest,
     User,
+    AdminConfig,
+    RoomSpec,
 )
+from .scheduler_engine import SchedulerEngine
 from .services import (
     build_suggestions,
     calculate_quality,
     detect_conflicts,
+    generate_timetable_entries,
     emergency_reschedule,
     generate_timetable_entries,
     run_simulation,
+    generate_section_aware_timetable,
     validate_constraints,
 )
 
@@ -69,7 +78,9 @@ app.add_middleware(
 MOCK_USERS: list[User] = []
 MOCK_SCOPES: list[AccessScope] = []
 MOCK_CONSTRAINTS: list[ConstraintRule] = []
+MOCK_ELECTIVE_GROUPS: list[ElectiveGroup] = []
 TIMETABLE_CACHE: dict[str, TimetableGenerateResponse] = {}
+SCHEDULER_ENGINE = SchedulerEngine(seed=42)
 
 
 @app.get("/health")
@@ -118,9 +129,23 @@ def list_constraints(tenant_id: str) -> list[ConstraintRule]:
     return [rule for rule in MOCK_CONSTRAINTS if rule.tenant_id == tenant_id]
 
 
+
+@app.post("/elective-groups", response_model=ElectiveGroup)
+def create_elective_group(group: ElectiveGroup) -> ElectiveGroup:
+    MOCK_ELECTIVE_GROUPS.append(group)
+    return group
+
+
+@app.get("/elective-groups", response_model=list[ElectiveGroup])
+def list_elective_groups(section: str | None = None) -> list[ElectiveGroup]:
+    if not section:
+        return MOCK_ELECTIVE_GROUPS
+    return [group for group in MOCK_ELECTIVE_GROUPS if section in group.sections]
+
+
 @app.post("/timetables/validate")
 def validate_timetable(payload: TimetableValidateRequest) -> dict:
-    conflicts = detect_conflicts(payload.timetable)
+    conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return {
         "tenant_id": payload.tenant_id,
         "valid": len(conflicts) == 0,
@@ -155,7 +180,7 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
 
 @app.post("/timetables/suggestions", response_model=SuggestionResponse)
 def timetable_suggestions(payload: TimetableValidateRequest) -> SuggestionResponse:
-    conflicts = detect_conflicts(payload.timetable)
+    conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return build_suggestions(payload.tenant_id, payload.timetable, len(conflicts))
 
 
@@ -172,5 +197,25 @@ def handle_emergency(payload: EmergencyRescheduleRequest) -> EmergencyReschedule
 
 @app.post("/timetables/quality", response_model=QualityResponse)
 def timetable_quality(payload: TimetableValidateRequest) -> QualityResponse:
-    conflicts = detect_conflicts(payload.timetable)
+    conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return calculate_quality(payload.tenant_id, payload.timetable, len(conflicts))
+
+
+@app.post("/curriculum/import", response_model=CurriculumImportResponse)
+async def import_curriculum(request: Request, tenant_id: str) -> CurriculumImportResponse:
+    content_type = request.headers.get("content-type", "")
+    if "application/pdf" not in content_type and "application/x-pdf" not in content_type:
+        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    pdf_bytes = await request.body()
+    subjects = extract_subjects_from_pdf(pdf_bytes)
+    summaries = validate_by_semester(subjects)
+    persisted_count = persist_subjects(tenant_id, subjects)
+
+    return CurriculumImportResponse(
+        tenant_id=tenant_id,
+        extracted_count=len(subjects),
+        persisted_count=persisted_count,
+        semesters=summaries,
+        subjects=subjects,
+    )
