@@ -50,8 +50,8 @@ def test_validate_conflict_and_suggestions() -> None:
     payload = {
         'tenant_id': 't1',
         'timetable': [
-            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'course': 'AI', 'room': 'R101', 'faculty_id': 'F1'},
-            {'section': 'CSE-B', 'day': 'Monday', 'period': 1, 'course': 'ML', 'room': 'R101', 'faculty_id': 'F1'},
+            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'subject': {'name': 'AI', 'course_code': 'CS501', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'semester_id': 'SEM5', 'program_id': 'BTECH-CSE', 'regulation': 'R20'}, 'room': 'R101', 'faculty_id': 'F1'},
+            {'section': 'CSE-B', 'day': 'Monday', 'period': 1, 'subject': {'name': 'ML', 'course_code': 'CS502', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 0, 'p_hours': 0, 'tcp': 3, 'semester_id': 'SEM5', 'program_id': 'BTECH-CSE', 'regulation': 'R20'}, 'room': 'R101', 'faculty_id': 'F1'},
         ],
     }
     validate_response = client.post('/timetables/validate', json=payload)
@@ -67,7 +67,10 @@ def test_generate_simulation_emergency_quality() -> None:
     generate_payload = {
         'tenant_id': 't1',
         'sections': ['CSE-A', 'CSE-B'],
-        'courses': ['Math', 'AI'],
+        'subjects': [
+            {'name': 'Math', 'course_code': 'MA201', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 1, 'p_hours': 0, 'tcp': 4, 'semester_id': 'SEM3', 'program_id': 'BTECH-CSE', 'regulation': 'R20'},
+            {'name': 'AI', 'course_code': 'CS301', 'course_type': 'THEORY', 'l_hours': 3, 't_hours': 0, 'p_hours': 0, 'tcp': 3, 'semester_id': 'SEM3', 'program_id': 'BTECH-CSE', 'regulation': 'R20'},
+        ],
         'rooms': ['R101', 'R102'],
         'faculty_ids': ['F1', 'F2'],
     }

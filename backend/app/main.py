@@ -130,8 +130,8 @@ def validate_timetable(payload: TimetableValidateRequest) -> dict:
 
 @app.post("/timetables/generate", response_model=TimetableGenerateResponse)
 def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
-    if not payload.courses or not payload.rooms or not payload.faculty_ids:
-        raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
+    if not payload.subjects or not payload.rooms or not payload.faculty_ids:
+        raise HTTPException(status_code=400, detail="subjects, rooms, and faculty_ids are required")
 
     entries = []
     for i, section in enumerate(payload.sections, start=1):
@@ -140,7 +140,7 @@ def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateRe
                 "section": section,
                 "day": "Monday",
                 "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
+                "subject": payload.subjects[(i - 1) % len(payload.subjects)].model_dump(),
                 "room": payload.rooms[(i - 1) % len(payload.rooms)],
                 "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
             }

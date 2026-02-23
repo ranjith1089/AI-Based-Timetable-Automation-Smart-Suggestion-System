@@ -3,6 +3,20 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
+class SubjectSpec(BaseModel):
+    subject_id: str | None = None
+    name: str
+    course_code: str = Field(min_length=2)
+    course_type: Literal["THEORY", "PRACTICAL", "TUTORIAL", "PROJECT"]
+    l_hours: int = Field(ge=0)
+    t_hours: int = Field(ge=0)
+    p_hours: int = Field(ge=0)
+    tcp: int = Field(ge=0)
+    semester_id: str = Field(min_length=2)
+    program_id: str = Field(min_length=2)
+    regulation: str = Field(min_length=2)
+
+
 class User(BaseModel):
     user_id: str = Field(min_length=2)
     tenant_id: str = Field(min_length=2)
@@ -42,7 +56,7 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course: str
+    subject: SubjectSpec
     room: str
     faculty_id: str
 
@@ -50,7 +64,7 @@ class TimetableEntry(BaseModel):
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
-    courses: list[str]
+    subjects: list[SubjectSpec]
     rooms: list[str]
     faculty_ids: list[str]
 
