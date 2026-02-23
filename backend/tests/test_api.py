@@ -101,3 +101,39 @@ def test_generate_simulation_emergency_quality() -> None:
     quality_response = client.post('/timetables/quality', json=quality_payload)
     assert quality_response.status_code == 200
     assert quality_response.json()['overall_quality'] >= 0
+
+
+def test_room_conflict_across_days_does_not_conflict() -> None:
+    payload = {
+        'tenant_id': 't1',
+        'timetable': [
+            {'section': 'CSE-A', 'day': 'Monday', 'period': 1, 'course': 'AI', 'room': 'R101', 'faculty_id': 'F1'},
+            {'section': 'CSE-B', 'day': 'Tuesday', 'period': 1, 'course': 'ML', 'room': 'R101', 'faculty_id': 'F2'},
+        ],
+    }
+    validate_response = client.post('/timetables/validate', json=payload)
+    assert validate_response.status_code == 200
+
+    room_conflicts = [
+        conflict for conflict in validate_response.json()['conflicts'] if conflict['conflict_type'] == 'ROOM'
+    ]
+    assert room_conflicts == []
+
+
+def test_room_conflict_same_day_same_period_conflicts() -> None:
+    payload = {
+        'tenant_id': 't1',
+        'timetable': [
+            {'section': 'CSE-A', 'day': 'Monday', 'period': 2, 'course': 'AI', 'room': 'R102', 'faculty_id': 'F1'},
+            {'section': 'CSE-B', 'day': 'Monday', 'period': 2, 'course': 'ML', 'room': 'R102', 'faculty_id': 'F2'},
+        ],
+    }
+    validate_response = client.post('/timetables/validate', json=payload)
+    assert validate_response.status_code == 200
+
+    room_conflicts = [
+        conflict for conflict in validate_response.json()['conflicts'] if conflict['conflict_type'] == 'ROOM'
+    ]
+    assert len(room_conflicts) == 2
+    assert all(conflict['day'] == 'Monday' for conflict in room_conflicts)
+    assert all('Monday' in conflict['message'] for conflict in room_conflicts)

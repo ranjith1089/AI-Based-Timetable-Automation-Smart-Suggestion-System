@@ -18,12 +18,12 @@ from .schemas import (
 def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
     conflicts: list[ConflictRecord] = []
     faculty_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
-    room_map: dict[tuple[str, int], list[TimetableEntry]] = defaultdict(list)
+    room_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
     section_map: dict[tuple[str, str, int], list[TimetableEntry]] = defaultdict(list)
 
     for entry in timetable:
         faculty_map[(entry.faculty_id, entry.day, entry.period)].append(entry)
-        room_map[(entry.room, entry.period)].append(entry)
+        room_map[(entry.room, entry.day, entry.period)].append(entry)
         section_map[(entry.section, entry.day, entry.period)].append(entry)
 
     for (_, day, period), entries in faculty_map.items():
@@ -39,15 +39,15 @@ def detect_conflicts(timetable: list[TimetableEntry]) -> list[ConflictRecord]:
                     )
                 )
 
-    for (_, period), entries in room_map.items():
+    for (_, day, period), entries in room_map.items():
         if len(entries) > 1:
             for entry in entries:
                 conflicts.append(
                     ConflictRecord(
                         conflict_type="ROOM",
-                        message=f"Room {entry.room} double-booked at period {period}",
+                        message=f"Room {entry.room} double-booked on {day} at period {period}",
                         section=entry.section,
-                        day=entry.day,
+                        day=day,
                         period=period,
                     )
                 )
