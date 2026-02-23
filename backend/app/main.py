@@ -8,16 +8,18 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import check_connection, _get_engine
+from .pdf_ingestion import extract_subjects_from_pdf, persist_subjects, validate_by_semester
 from .schemas import (
     AccessScope,
     ConstraintRule,
     ElectiveGroup,
     EmergencyRescheduleRequest,
     EmergencyRescheduleResponse,
+    CurriculumImportResponse,
     QualityResponse,
     SimulationRequest,
     SimulationResponse,
@@ -199,3 +201,23 @@ def handle_emergency(payload: EmergencyRescheduleRequest) -> EmergencyReschedule
 def timetable_quality(payload: TimetableValidateRequest) -> QualityResponse:
     conflicts = detect_conflicts(payload.timetable, payload.elective_groups)
     return calculate_quality(payload.tenant_id, payload.timetable, len(conflicts))
+
+
+@app.post("/curriculum/import", response_model=CurriculumImportResponse)
+async def import_curriculum(request: Request, tenant_id: str) -> CurriculumImportResponse:
+    content_type = request.headers.get("content-type", "")
+    if "application/pdf" not in content_type and "application/x-pdf" not in content_type:
+        raise HTTPException(status_code=400, detail="Only PDF uploads are supported")
+
+    pdf_bytes = await request.body()
+    subjects = extract_subjects_from_pdf(pdf_bytes)
+    summaries = validate_by_semester(subjects)
+    persisted_count = persist_subjects(tenant_id, subjects)
+
+    return CurriculumImportResponse(
+        tenant_id=tenant_id,
+        extracted_count=len(subjects),
+        persisted_count=persisted_count,
+        semesters=summaries,
+        subjects=subjects,
+    )
