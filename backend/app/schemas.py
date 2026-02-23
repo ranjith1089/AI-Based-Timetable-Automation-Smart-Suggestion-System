@@ -1,4 +1,4 @@
-from typing import Literal
+from __future__ import annotations
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
@@ -42,15 +42,32 @@ class TimetableEntry(BaseModel):
     section: str
     day: str
     period: int
-    course: str
+    subject: SubjectSpec
     room: str
     faculty_id: str
 
 
+class ElectiveGroup(BaseModel):
+    group_name: str
+    sections: list[str]
+    electives: list[str]
+
+
+class SaturdayConfig(BaseModel):
+    enabled: bool = False
+    mode: Literal["LABS_ONLY", "SD_ELECTIVE_FOCUS", "OVERFLOW"] = "OVERFLOW"
+    max_periods: int = Field(default=4, ge=1, le=8)
+
+
+class ExtraHourBuffer(BaseModel):
+    enabled: bool = False
+    periods: int = Field(default=0, ge=0, le=3)
+
+
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
-    sections: list[str]
-    courses: list[str]
+    sections: list[Union[str, "SchedulerSectionInput"]]
+    courses: list[str] = Field(default_factory=list)
     rooms: list[str]
     faculty_ids: list[str]
     working_days: int = Field(default=5, ge=1, le=6)
@@ -113,11 +130,43 @@ class TimetableGenerateResponse(BaseModel):
     quality_score: float
     generation_config: TimetableGenerationConfig
     timetable: list[TimetableEntry]
+    section_timetables: dict[str, list[TimetableEntry]]
+    allocation_rationale: list[str] = Field(default_factory=list)
+
+
+class SchedulerSubjectInput(BaseModel):
+    code: str
+    ltp: str
+    faculty_id: str
+    room_type: Literal["CLASSROOM", "LAB"] = "CLASSROOM"
+    elective_group: str | None = None
+    lab_block_size: int | None = None
+
+
+class SchedulerSectionInput(BaseModel):
+    section: str
+    subjects: list[SchedulerSubjectInput]
+
+
+class SchedulerAdminConfig(BaseModel):
+    working_days: list[str]
+    hours_per_day: int = Field(ge=1)
+    extra_hours: dict[str, int] = Field(default_factory=dict)
+    saturday_hours: int | None = Field(default=None, ge=1)
+    allowed_lab_block_sizes: list[int] = Field(default_factory=lambda: [2, 3, 4])
+    default_lab_block_size: int = 2
+
+
+class SchedulerGenerateResult(TimetableGenerateResponse):
+    conflicts: list[ConflictRecord] = Field(default_factory=list)
+    fitness_score: float
+    constraint_summary: dict
 
 
 class TimetableValidateRequest(BaseModel):
     tenant_id: str
     timetable: list[TimetableEntry]
+    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
 
 
 class SuggestionRecord(BaseModel):
@@ -168,3 +217,21 @@ class QualityResponse(BaseModel):
     room_utilization: float
     clash_risk: float
     overall_quality: float
+
+
+class ExtractedSubject(BaseModel):
+    semester: str
+    code: str
+    name: str
+    course_type: str
+    L: int = Field(ge=0)
+    T: int = Field(ge=0)
+    P: int = Field(ge=0)
+    TCP: int = Field(ge=0)
+    credits: int = Field(ge=0)
+
+
+class SubjectImportResponse(BaseModel):
+    semesters: dict[str, list[ExtractedSubject]]
+    errors: list[dict] = Field(default_factory=list)
+    total_subjects: int
