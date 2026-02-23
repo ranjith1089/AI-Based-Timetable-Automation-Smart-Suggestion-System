@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
 
@@ -82,21 +82,13 @@ class ExtraHourBuffer(BaseModel):
 
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
-    sections: list[str]
-    subjects: list[SubjectSpec]
+    sections: list[Union[str, "SchedulerSectionInput"]]
+    courses: list[str] = Field(default_factory=list)
     rooms: list[str]
-    faculty_ids: list[str]
-    elective_groups: list[ElectiveGroup] = Field(default_factory=list)
-    saturday_config: SaturdayConfig = Field(default_factory=SaturdayConfig)
-    extra_hour_buffer: ExtraHourBuffer = Field(default_factory=ExtraHourBuffer)
-    enforce_lab_continuity: bool = True
-
-    @model_validator(mode="after")
-    def validate_section_count(self) -> "TimetableGenerateRequest":
-        expected_count = self.section_count or len(self.sections)
-        if expected_count != len(self.sections):
-            raise ValueError("section_count must match number of sections supplied")
-        return self
+    faculty_ids: list[str] = Field(default_factory=list)
+    admin_config: Optional["SchedulerAdminConfig"] = None
+    room_types: dict[str, Literal["CLASSROOM", "LAB"]] = Field(default_factory=dict)
+    ga_config: dict[str, float | int] = Field(default_factory=dict)
 
 
 class ConflictRecord(BaseModel):
@@ -115,6 +107,35 @@ class TimetableGenerateResponse(BaseModel):
     timetable: list[TimetableEntry]
     section_timetables: dict[str, list[TimetableEntry]]
     allocation_rationale: list[str] = Field(default_factory=list)
+
+
+class SchedulerSubjectInput(BaseModel):
+    code: str
+    ltp: str
+    faculty_id: str
+    room_type: Literal["CLASSROOM", "LAB"] = "CLASSROOM"
+    elective_group: str | None = None
+    lab_block_size: int | None = None
+
+
+class SchedulerSectionInput(BaseModel):
+    section: str
+    subjects: list[SchedulerSubjectInput]
+
+
+class SchedulerAdminConfig(BaseModel):
+    working_days: list[str]
+    hours_per_day: int = Field(ge=1)
+    extra_hours: dict[str, int] = Field(default_factory=dict)
+    saturday_hours: int | None = Field(default=None, ge=1)
+    allowed_lab_block_sizes: list[int] = Field(default_factory=lambda: [2, 3, 4])
+    default_lab_block_size: int = 2
+
+
+class SchedulerGenerateResult(TimetableGenerateResponse):
+    conflicts: list[ConflictRecord] = Field(default_factory=list)
+    fitness_score: float
+    constraint_summary: dict
 
 
 class TimetableValidateRequest(BaseModel):
