@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
@@ -50,9 +52,13 @@ class TimetableEntry(BaseModel):
 class TimetableGenerateRequest(BaseModel):
     tenant_id: str
     sections: list[str]
-    courses: list[str]
-    rooms: list[str]
+    courses: list[str] = Field(default_factory=list)
+    rooms: list[str] = Field(default_factory=list)
     faculty_ids: list[str]
+    subjects: list[SubjectSpec] = Field(default_factory=list)
+    room_specs: list[RoomSpec] = Field(default_factory=list)
+    admin_config: AdminConfig | None = None
+    optimizer: dict[str, int] = Field(default_factory=dict)
 
 
 class ConflictRecord(BaseModel):
@@ -69,6 +75,49 @@ class TimetableGenerateResponse(BaseModel):
     conflict_count: int
     quality_score: float
     timetable: list[TimetableEntry]
+    score_breakdown: ScoreBreakdown
+    diagnostics: SchedulerDiagnostics
+
+
+class SubjectSpec(BaseModel):
+    subject: str
+    faculty_id: str
+    ltp: tuple[int, int, int]
+    difficulty: int = Field(default=3, ge=1, le=5)
+    lab_block_size: int | None = Field(default=None, ge=1)
+
+
+class RoomSpec(BaseModel):
+    name: str
+    is_lab: bool = False
+
+
+class AdminConfig(BaseModel):
+    days: list[str] = Field(default_factory=list)
+    hours_per_day: int = Field(default=6, ge=1)
+    include_saturday: bool = False
+    extra_slots: int = Field(default=0, ge=0)
+
+
+class AssignmentConflict(BaseModel):
+    conflict_type: Literal["FACULTY", "ROOM", "SECTION"]
+    message: str
+    section: str
+    day: str
+    period: int
+
+
+class ScoreBreakdown(BaseModel):
+    hard_penalty: int
+    subject_spread_penalty: int
+    fatigue_penalty: int
+    heavy_subject_penalty: int
+    final_score: float
+
+
+class SchedulerDiagnostics(BaseModel):
+    hard_conflicts: list[AssignmentConflict]
+    soft_constraint_notes: list[str]
 
 
 class TimetableValidateRequest(BaseModel):

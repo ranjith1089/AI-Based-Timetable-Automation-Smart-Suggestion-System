@@ -21,11 +21,15 @@ from .schemas import (
     SimulationRequest,
     SimulationResponse,
     SuggestionResponse,
+    SubjectSpec,
     TimetableGenerateRequest,
     TimetableGenerateResponse,
     TimetableValidateRequest,
     User,
+    AdminConfig,
+    RoomSpec,
 )
+from .scheduler_engine import SchedulerEngine
 from .services import (
     build_suggestions,
     calculate_quality,
@@ -69,6 +73,7 @@ MOCK_USERS: list[User] = []
 MOCK_SCOPES: list[AccessScope] = []
 MOCK_CONSTRAINTS: list[ConstraintRule] = []
 TIMETABLE_CACHE: dict[str, TimetableGenerateResponse] = {}
+SCHEDULER_ENGINE = SchedulerEngine(seed=42)
 
 
 @app.get("/health")
@@ -130,28 +135,44 @@ def validate_timetable(payload: TimetableValidateRequest) -> dict:
 
 @app.post("/timetables/generate", response_model=TimetableGenerateResponse)
 def generate_timetable(payload: TimetableGenerateRequest) -> TimetableGenerateResponse:
-    if not payload.courses or not payload.rooms or not payload.faculty_ids:
-        raise HTTPException(status_code=400, detail="courses, rooms, and faculty_ids are required")
+    if not payload.sections:
+        raise HTTPException(status_code=400, detail="sections are required")
 
-    entries = []
-    for i, section in enumerate(payload.sections, start=1):
-        entries.append(
-            {
-                "section": section,
-                "day": "Monday",
-                "period": i,
-                "course": payload.courses[(i - 1) % len(payload.courses)],
-                "room": payload.rooms[(i - 1) % len(payload.rooms)],
-                "faculty_id": payload.faculty_ids[(i - 1) % len(payload.faculty_ids)],
-            }
-        )
+    subjects = payload.subjects
+    if not subjects:
+        if not payload.courses or not payload.faculty_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="provide either subjects[] or both courses and faculty_ids",
+            )
+        subjects = [
+            SubjectSpec(subject=course, faculty_id=payload.faculty_ids[i % len(payload.faculty_ids)], ltp=(3, 1, 0))
+            for i, course in enumerate(payload.courses)
+        ]
+
+    room_specs = payload.room_specs
+    if not room_specs:
+        if not payload.rooms:
+            raise HTTPException(status_code=400, detail="rooms or room_specs are required")
+        room_specs = [RoomSpec(name=room, is_lab=False) for room in payload.rooms]
+
+    config = payload.admin_config or AdminConfig()
+    entries, score_breakdown, diagnostics = SCHEDULER_ENGINE.generate(
+        sections=payload.sections,
+        subjects=subjects,
+        rooms=room_specs,
+        config=config,
+        ga_config=payload.optimizer,
+    )
 
     response = TimetableGenerateResponse(
         tenant_id=payload.tenant_id,
         generated=True,
-        conflict_count=0,
-        quality_score=82.0,
+        conflict_count=len(diagnostics.hard_conflicts),
+        quality_score=score_breakdown.final_score,
         timetable=entries,
+        score_breakdown=score_breakdown,
+        diagnostics=diagnostics,
     )
     timetable_id = str(uuid4())
     TIMETABLE_CACHE[timetable_id] = response
