@@ -24,6 +24,16 @@ CREATE TABLE programs (
   name VARCHAR(255) NOT NULL
 );
 
+CREATE TABLE semesters (
+  semester_id VARCHAR(64) PRIMARY KEY,
+  tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
+  program_id VARCHAR(64) NOT NULL REFERENCES programs(program_id),
+  name VARCHAR(100) NOT NULL,
+  sequence_no INT NOT NULL CHECK (sequence_no >= 1),
+  UNIQUE (tenant_id, program_id, sequence_no),
+  UNIQUE (tenant_id, program_id, name)
+);
+
 CREATE TABLE sections (
   section_id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
@@ -80,7 +90,7 @@ CREATE TABLE timetable_entries (
   section_id VARCHAR(64) NOT NULL REFERENCES sections(section_id),
   day_of_week VARCHAR(20) NOT NULL,
   period_no INT NOT NULL,
-  subject_name VARCHAR(255) NOT NULL,
+  subject_id VARCHAR(64) NOT NULL,
   faculty_name VARCHAR(255) NOT NULL,
   room_name VARCHAR(255) NOT NULL
 );
@@ -96,9 +106,38 @@ CREATE TABLE faculty_availability (
 CREATE TABLE subjects (
   subject_id VARCHAR(64) PRIMARY KEY,
   tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
+  program_id VARCHAR(64) NOT NULL REFERENCES programs(program_id),
+  semester_id VARCHAR(64) NOT NULL REFERENCES semesters(semester_id),
+  regulation VARCHAR(64) NOT NULL,
   name VARCHAR(255) NOT NULL,
-  credits INT NOT NULL DEFAULT 3,
-  is_lab BOOLEAN NOT NULL DEFAULT FALSE
+  course_code VARCHAR(64) NOT NULL,
+  course_type VARCHAR(20) NOT NULL CHECK (course_type IN ('THEORY', 'PRACTICAL', 'TUTORIAL', 'PROJECT')),
+  l_hours INT NOT NULL DEFAULT 0 CHECK (l_hours >= 0),
+  t_hours INT NOT NULL DEFAULT 0 CHECK (t_hours >= 0),
+  p_hours INT NOT NULL DEFAULT 0 CHECK (p_hours >= 0),
+  tcp INT NOT NULL DEFAULT 0 CHECK (tcp >= 0),
+  credits INT NOT NULL DEFAULT 3 CHECK (credits >= 0),
+  is_lab BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE (tenant_id, program_id, regulation, semester_id, course_code),
+  UNIQUE (tenant_id, program_id, regulation, semester_id, name)
+);
+
+ALTER TABLE timetable_entries
+  ADD CONSTRAINT fk_timetable_entries_subject
+  FOREIGN KEY (subject_id) REFERENCES subjects(subject_id);
+
+CREATE TABLE elective_groups (
+  group_id VARCHAR(64) PRIMARY KEY,
+  tenant_id VARCHAR(64) NOT NULL REFERENCES tenants(tenant_id),
+  subject_id VARCHAR(64) NOT NULL REFERENCES subjects(subject_id),
+  synchronized_day VARCHAR(20),
+  synchronized_period INT
+);
+
+CREATE TABLE elective_group_sections (
+  group_id VARCHAR(64) NOT NULL REFERENCES elective_groups(group_id),
+  section_id VARCHAR(64) NOT NULL REFERENCES sections(section_id),
+  PRIMARY KEY (group_id, section_id)
 );
 
 CREATE TABLE rooms (
@@ -186,6 +225,10 @@ CREATE TABLE quality_scores (
   overall_quality NUMERIC(5,2) NOT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+
+CREATE INDEX idx_tt_entries_subject_slot
+  ON timetable_entries (tenant_id, subject_id, day_of_week, period_no);
 
 CREATE INDEX idx_tt_entries_section_slot
   ON timetable_entries (tenant_id, section_id, day_of_week, period_no);
